@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Airplane Tycoon</title>
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
+/>
+<style>
+  html, body { margin:0; padding:0; height:100%; font-family: Arial, sans-serif; }
+  #map { height: 100%; width: 100%; position: fixed; top:0; left:0; z-index: 1; }
+
+  #airport-list {
+    position: fixed; top:10px; left:10px; z-index: 1000;
+    background: rgba(255,255,255,0.95);
+    padding: 12px;
+    border-radius: 8px;
+    max-height: 90vh;
+    overflow-y: auto;
+    width: 260px;
+    font-size: 14px;
+    box-shadow: 0 0 8px rgba(0,0,0,0.2);
+  }
+  #airport-list h2 { margin-top: 0; }
+  #airport-items {
+    list-style:none;
+    margin:0; padding:0;
+  }
+  #airport-items li {
+    padding: 6px 8px;
+    border-bottom: 1px solid #ddd;
+    cursor: pointer;
+    user-select: none;
+  }
+  #airport-items li.unlocked { font-weight: 600; color: #00695c; }
+  #airport-items li.selected { background-color: #b2dfdb; }
+
+  #topbar {
+    position: fixed; top: 10px; right: 10px; z-index: 1000;
+    background: rgba(255,255,255,0.95);
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 15px;
+    box-shadow: 0 0 8px rgba(0,0,0,0.2);
+    display: flex; gap: 18px; align-items: center;
+  }
+
+  #upgrades {
+    position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
+    z-index: 1000;
+    background: rgba(255,255,255,0.97);
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 15px;
+    display: flex;
+    gap: 15px;
+    flex-wrap: wrap;
+    max-width: 95vw;
+    box-shadow: 0 0 8px rgba(0,0,0,0.15);
+  }
+  #upgrades button {
+    cursor: pointer;
+    border: none;
+    background: #00796b;
+    color: white;
+    padding: 10px 16px;
+    font-weight: 600;
+    border-radius: 6px;
+    transition: background-color 0.25s ease;
+  }
+  #upgrades button:disabled {
+    background: #b2dfdb;
+    cursor: not-allowed;
+  }
+  #upgrades button:hover:not(:disabled) {
+    background: #004d40;
+  }
+
+  #movement-controls {
+    position: fixed;
+    bottom: 80px;
+    right: 20px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  #movement-controls button {
+    background-color: #00796b;
+    border: none;
+    color: white;
+    font-size: 22px;
+    font-weight: 700;
+    padding: 10px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    user-select: none;
+  }
+  #movement-controls button:active {
+    background-color: #004d40;
+  }
+
+  .plane-icon {
+    font-size: 30px;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .hint-box {
+    background: #f9f9f9;
+    border: 1px solid #ccc;
+    padding: 8px 12px;
+    font-size: 13px;
+    border-radius: 6px;
+    margin-top: 12px;
+  }
+  .hint-box button {
+    margin-top: 8px;
+    font-size: 12px;
+    padding: 5px 10px;
+    cursor: pointer;
+    border: none;
+    background-color: #00796b;
+    color: white;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<div id="airport-list">
+  <h2>Airports</h2>
+  <ul id="airport-items"></ul>
+  <div class="hint-box" id="hint-airports">
+    Click an unlocked airport to fly your planes there.<br>
+    Locked airports cost money to unlock.<br>
+    <button id="hint-airports-btn">Got it</button>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<div id="topbar">
+  <div>💰 Money: $<span id="money">0</span></div>
+  <div>✈️ Planes: <span id="planes">0</span></div>
+  <div>🚀 Tier: <span id="plane-tier">Basic</span></div>
+  <div>⭐ VIP: <span id="vip-status">No</span></div>
+</div>
+
+<div id="upgrades">
+  <button id="buy-plane-btn">Buy Plane ($10,000)</button>
+  <button id="upgrade-plane-btn">Upgrade Plane ($50,000)</button>
+  <button id="unlock-airport-btn">Unlock Airport ($20,000+)</button>
+  <button id="buy-vip-btn">Unlock VIP ($100,000)</button>
+  <button id="reset-progress-btn" style="background:#d32f2f;">Reset Progress</button>
+  <div class="hint-box" id="hint-upgrades">
+    Use these buttons to expand and improve your airline.<br>
+    <button id="hint-upgrades-btn">Got it</button>
+  </div>
+</div>
+
+<div id="movement-controls">
+  <button id="move-up">↑</button>
+  <button id="move-left">←</button>
+  <button id="move-down">↓</button>
+  <button id="move-right">→</button>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+<script>
+  // Fix hint "Got it" buttons to hide hints on click
+  document.getElementById('hint-airports-btn').addEventListener('click', () => {
+    document.getElementById('hint-airports').style.display = 'none';
+  });
+  document.getElementById('hint-upgrades-btn').addEventListener('click', () => {
+    document.getElementById('hint-upgrades').style.display = 'none';
+  });
+
+  // Airports data
+  const airports = [
+    { code: "JFK", name: "John F. Kennedy Intl", coords: [40.6413, -73.7781], unlocked: true, cost: 20000 },
+    { code: "LAX", name: "Los Angeles Intl", coords: [33.9416, -118.4085], unlocked: false, cost: 20000 },
+    { code: "ORD", name: "O'Hare Intl", coords: [41.9742, -87.9073], unlocked: false, cost: 20000 },
+    { code: "ATL", name: "Hartsfield-Jackson Atlanta Intl", coords: [33.6407, -84.4277], unlocked: false, cost: 20000 },
+    { code: "LHR", name: "London Heathrow", coords: [51.4700, -0.4543], unlocked: false, cost: 25000 },
+    { code: "NRT", name: "Narita Intl", coords: [35.7719, 140.3929], unlocked: false, cost: 25000 },
+    { code: "DXB", name: "Dubai Intl", coords: [25.2532, 55.3657], unlocked: false, cost: 30000 },
+    { code: "SYD", name: "Sydney Kingsford Smith", coords: [-33.9399, 151.1753], unlocked: false, cost: 30000 }
+  ];
+
+  // State variables - Start player with $15,000 so they can buy at least one plane
+  let money = 15000;
+  let planes = 1;
+  let currentAirport = airports[0];
+  const planeTiers = [
+    { name: "Basic", multiplier: 1, upgradeCost: 50000 },
+    { name: "Advanced", multiplier: 2, upgradeCost: 150000 },
+    { name: "Luxury", multiplier: 5, upgradeCost: 500000 }
+  ];
+  let planeTierIndex = 0;
+  let vipUnlocked = false;
+  const vipMultiplier = 2;
+
+  // DOM refs
+  const airportListUl = document.getElementById('airport-items');
+  const moneySpan = document.getElementById('money');
+  const planesSpan = document.getElementById('planes');
+  const planeTierSpan = document.getElementById('plane-tier');
+  const vipStatusSpan = document.getElementById('vip-status');
+
+  // Leaflet map init
+  const map = L.map('map').setView(currentAirport.coords, 3);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  // Airport markers
+  const airportMarkers = new Map();
+  airports.forEach(a => {
+    const m = L.marker(a.coords).addTo(map).bindPopup(`<b>${a.code}</b><br>${a.name}`);
+    airportMarkers.set(a.code, m);
+  });
+
+  // Plane icon
+  let planeMarker = null;
+  let flightFrom = null;
+  let flightTo = null;
+  let flightProgress = 0;
+  const flightSpeed = 0.002;
+
+  function updateAirportList() {
+    airportListUl.innerHTML = '';
+    airports.forEach(a => {
+      const li = document.createElement('li');
+      li.textContent = `${a.code} - ${a.name}`;
+      if (a.unlocked) li.classList.add('unlocked');
+      if (a === currentAirport) li.classList.add('selected');
+      li.onclick = () => {
+        if (!a.unlocked) {
+          alert(`Airport locked! Unlock for $${a.cost.toLocaleString()}`);
+          return;
+        }
+        if (a === currentAirport) {
+          alert('Already at this airport!');
+          return;
+        }
+        startFlight(currentAirport, a);
+        currentAirport = a;
+        updateAirportList();
+        saveProgress();
+      };
+      airportListUl.appendChild(li);
+    });
+  }
+
+  function startFlight(from, to) {
+    flightFrom = from;
+    flightTo = to;
+    flightProgress = 0;
+
+    if (!planeMarker) {
+      planeMarker = L.marker(from.coords, {
+        icon: L.divIcon({
+          className: 'plane-icon',
+          html: '✈️',
+          iconSize: [30,30],
+          iconAnchor: [15,15]
+        }),
+        interactive: false
+      }).addTo(map);
+    } else {
+      planeMarker.setLatLng(from.coords).addTo(map);
+    }
+  }
+
+  function animateFlight() {
+    if (!planeMarker || !flightFrom || !flightTo) return;
+
+    flightProgress += flightSpeed;
+    if (flightProgress >= 1) {
+      flightProgress = 0;
+
+      // Earnings for completed flight
+      let earnings = 2000 * planes * planeTiers[planeTierIndex].multiplier;
+      if (vipUnlocked) earnings *= vipMultiplier;
+      money += earnings;
+      updateInfo();
+      saveProgress();
+
+      // Swap direction to keep flying back and forth
+      const temp = flightFrom;
+      flightFrom = flightTo;
+      flightTo = temp;
+      updateAirportList();
+    }
+    const lat = flightFrom.coords[0] + (flightTo.coords[0] - flightFrom.coords[0]) * flightProgress;
+    const lng = flightFrom.coords[1] + (flightTo.coords[1] - flightFrom.coords[1]) * flightProgress;
+    planeMarker.setLatLng([lat, lng]);
+  }
+
+  function updateInfo() {
+    moneySpan.textContent = money.toLocaleString();
+    planesSpan.textContent = planes;
+    planeTierSpan.textContent = planeTiers[planeTierIndex].name;
+    vipStatusSpan.textContent = vipUnlocked ? 'Yes' : 'No';
+    updateButtons();
+  }
+
+  function saveProgress() {
+    const data = {
+      money,
+      planes,
+      currentAirportCode: currentAirport.code,
+      unlockedAirports: airports.filter(a => a.unlocked).map(a => a.code),
+      planeTierIndex,
+      vipUnlocked
+    };
+    localStorage.setItem('airplaneTycoonSave', JSON.stringify(data));
+  }
+
+  function loadProgress() {
+    const saved = localStorage.getItem('airplaneTycoonSave');
+    if (!saved) return false;
+    try {
+      const data = JSON.parse(saved);
+      money = data.money ?? money;
+      planes = data.planes ?? planes;
+      planeTierIndex = data.planeTierIndex ?? planeTierIndex;
+      vipUnlocked = data.vipUnlocked ?? vipUnlocked;
+      airports.forEach(a => a.unlocked = data.unlockedAirports?.includes(a.code) ?? a.unlocked);
+      currentAirport = airports.find(a => a.code === data.currentAirportCode) ?? currentAirport;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Button refs
+  const buyPlaneBtn = document.getElementById('buy-plane-btn');
+  const upgradePlaneBtn = document.getElementById('upgrade-plane-btn');
+  const unlockAirportBtn = document.getElementById('unlock-airport-btn');
+  const buyVipBtn = document.getElementById('buy-vip-btn');
+  const resetBtn = document.getElementById('reset-progress-btn');
+
+  buyPlaneBtn.onclick = () => {
+    if (money >= 10000) {
+      money -= 10000;
+      planes++;
+      updateInfo();
+      saveProgress();
+    } else {
+      alert('Not enough money to buy a plane!');
+    }
+  };
+
+  upgradePlaneBtn.onclick = () => {
+    if (planeTierIndex >= planeTiers.length - 1) {
+      alert('Already at max plane tier!');
+      return;
+    }
+    const nextTier = planeTiers[planeTierIndex + 1];
+    if (money >= nextTier.upgradeCost) {
+      money -= nextTier.upgradeCost;
+      planeTierIndex++;
+      updateInfo();
+      saveProgress();
+    } else {
+      alert(`Not enough money to upgrade to ${nextTier.name}!`);
+    }
+  };
+
+  unlockAirportBtn.onclick = () => {
+    const lockedAirport = airports.find(a => !a.unlocked);
+    if (!lockedAirport) {
+      alert('All airports unlocked!');
+      return;
+    }
+    if (money >= lockedAirport.cost) {
+      money -= lockedAirport.cost;
+      lockedAirport.unlocked = true;
+      updateAirportList();
+      updateInfo();
+      saveProgress();
+    } else {
+      alert(`Not enough money to unlock ${lockedAirport.code}!`);
+    }
+  };
+
+  buyVipBtn.onclick = () => {
+    if (vipUnlocked) {
+      alert('VIP customers already unlocked!');
+      return;
+    }
+    if (money >= 100000) {
+      money -= 100000;
+      vipUnlocked = true;
+      updateInfo();
+      saveProgress();
+    } else {
+      alert('Not enough money to unlock VIP customers!');
+    }
+  };
+
+  resetBtn.onclick = () => {
+    if (confirm('Are you sure you want to reset your progress?')) {
+      localStorage.removeItem('airplaneTycoonSave');
+      location.reload();
+    }
+  };
+
+  // Enable/disable buttons based on money and state
+  function updateButtons() {
+    buyPlaneBtn.disabled = money < 10000;
+    unlockAirportBtn.disabled = !airports.some(a => !a.unlocked && money >= a.cost);
+    upgradePlaneBtn.disabled = planeTierIndex >= planeTiers.length - 1 || money < planeTiers[planeTierIndex + 1]?.upgradeCost;
+    buyVipBtn.disabled = vipUnlocked || money < 100000;
+  }
+
+  // Movement controls
+  const moveUpBtn = document.getElementById('move-up');
+  const moveDownBtn = document.getElementById('move-down');
+  const moveLeftBtn = document.getElementById('move-left');
+  const moveRightBtn = document.getElementById('move-right');
+
+  const panAmount = 5; // degrees per button press
+
+  moveUpBtn.onclick = () => {
+    const c = map.getCenter();
+    map.panTo([c.lat + panAmount, c.lng]);
+  };
+  moveDownBtn.onclick = () => {
+    const c = map.getCenter();
+    map.panTo([c.lat - panAmount, c.lng]);
+  };
+  moveLeftBtn.onclick = () => {
+    const c = map.getCenter();
+    map.panTo([c.lat, c.lng - panAmount]);
+  };
+  moveRightBtn.onclick = () => {
+    const c = map.getCenter();
+    map.panTo([c.lat, c.lng + panAmount]);
+  };
+
+  // Load progress if available, else start fresh
+  if (!loadProgress()) {
+    // Unlock starting airport JFK
+    airports.forEach(a => {
+      if (a.code === 'JFK') a.unlocked = true;
+    });
+  }
+
+  updateAirportList();
+  updateInfo();
+
+  // If currentAirport is set but plane not flying, place plane marker there
+  if (!planeMarker) {
+    planeMarker = L.marker(currentAirport.coords, {
+      icon: L.divIcon({
+        className: 'plane-icon',
+        html: '✈️',
+        iconSize: [30,30],
+        iconAnchor: [15,15]
+      }),
+      interactive: false
+    }).addTo(map);
+  }
+
+  // Animate loop
+  function gameLoop() {
+    animateFlight();
+    requestAnimationFrame(gameLoop);
+  }
+  gameLoop();
+
+</script>
+</body
