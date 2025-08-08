@@ -1,0 +1,227 @@
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Airline Game - Responsive</title>
+<style>
+  /* Fullscreen map */
+  html, body, #map {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+  /* Info panel */
+  #info {
+    font-size: 1.2em;
+    max-width: 90vw;
+    padding: 10px 15px;
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255,255,255,0.9);
+    border-radius: 8px;
+    z-index: 1000;
+    text-align: center;
+    box-shadow: 0 0 10px rgba(0,0,0,0.2);
+  }
+  /* Buttons container */
+  #buttons {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    display: flex;
+    gap: 10px;
+  }
+  /* Big touch-friendly buttons */
+  .button {
+    font-size: 1.5em;
+    padding: 15px 20px;
+    border-radius: 12px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    transition: background-color 0.3s;
+  }
+  .button:active {
+    background-color: #0056b3;
+  }
+  /* Airport labels style */
+  .leaflet-popup-content-wrapper {
+    font-size: 1em;
+  }
+</style>
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
+/>
+</head>
+<body>
+<div id="info">Welcome to your airline! Use buttons or arrow keys to move.</div>
+<div id="map"></div>
+<div id="buttons" style="display:none;">
+  <button class="button" id="up">↑</button>
+  <button class="button" id="left">←</button>
+  <button class="button" id="down">↓</button>
+  <button class="button" id="right">→</button>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+<script>
+  const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+  // Initialize the map
+  const map = L.map('map', {
+    zoomControl: true,
+    minZoom: 2,
+    maxZoom: 6,
+  }).setView([20, 0], 2);
+
+  // Add a tile layer (OpenStreetMap standard)
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution:
+      '© OpenStreetMap contributors',
+  }).addTo(map);
+
+  // Sample airports data (add more as needed)
+  const airports = [
+    { code: 'JFK', name: 'John F. Kennedy Intl', coords: [40.6413, -73.7781] },
+    { code: 'LHR', name: 'London Heathrow', coords: [51.4700, -0.4543] },
+    { code: 'NRT', name: 'Tokyo Narita', coords: [35.7767, 140.3186] },
+    { code: 'SYD', name: 'Sydney Kingsford Smith', coords: [-33.9399, 151.1753] },
+    { code: 'GRU', name: 'São Paulo Guarulhos', coords: [-23.4356, -46.4731] },
+    { code: 'JNB', name: 'O.R. Tambo Intl', coords: [-26.1337, 28.2420] },
+  ];
+
+  // Add airports as markers with labels
+  airports.forEach(({ code, name, coords }) => {
+    L.marker(coords)
+      .addTo(map)
+      .bindPopup(`<b>${code}</b><br>${name}`)
+      .openPopup();
+  });
+
+  // Player’s starting airport (first airport)
+  let playerAirport = airports[0];
+
+  // Info panel update function
+  const info = document.getElementById('info');
+  function updateInfo() {
+    info.textContent = `Current airport: ${playerAirport.code} - ${playerAirport.name}`;
+  }
+  updateInfo();
+
+  // Movement delta for latitude/longitude
+  const moveDelta = 5;
+
+  // Movement function
+  function move(direction) {
+    let lat = playerAirport.coords[0];
+    let lng = playerAirport.coords[1];
+    if (direction === 'up') lat += moveDelta;
+    if (direction === 'down') lat -= moveDelta;
+    if (direction === 'left') lng -= moveDelta;
+    if (direction === 'right') lng += moveDelta;
+
+    // Find nearest airport to new coords (simple nearest by haversine or linear approx)
+    let nearest = airports[0];
+    let nearestDist = Infinity;
+    airports.forEach((ap) => {
+      const dist = getDistance(lat, lng, ap.coords[0], ap.coords[1]);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = ap;
+      }
+    });
+
+    playerAirport = nearest;
+    map.setView(playerAirport.coords, 4);
+    updateInfo();
+  }
+
+  // Calculate distance between two lat/lng points (approximate)
+  function getDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // km
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  // Keyboard controls for desktop
+  function setupKeyboardControls() {
+    window.addEventListener('keydown', (e) => {
+      if (e.repeat) return;
+      switch (e.key) {
+        case 'ArrowUp':
+          move('up');
+          break;
+        case 'ArrowDown':
+          move('down');
+          break;
+        case 'ArrowLeft':
+          move('left');
+          break;
+        case 'ArrowRight':
+          move('right');
+          break;
+      }
+    });
+  }
+
+  // Touch controls (show buttons)
+  function setupTouchControls() {
+    document.getElementById('buttons').style.display = 'flex';
+    document.getElementById('up').onclick = () => move('up');
+    document.getElementById('down').onclick = () => move('down');
+    document.getElementById('left').onclick = () => move('left');
+    document.getElementById('right').onclick = () => move('right');
+  }
+
+  if (isTouchDevice) {
+    setupTouchControls();
+  } else {
+    setupKeyboardControls();
+  }
+
+  // Save and load game progress using localStorage
+  function saveGame() {
+    localStorage.setItem('playerAirportCode', playerAirport.code);
+  }
+  function loadGame() {
+    const code = localStorage.getItem('playerAirportCode');
+    if (!code) return;
+    const savedAirport = airports.find((ap) => ap.code === code);
+    if (savedAirport) {
+      playerAirport = savedAirport;
+      map.setView(playerAirport.coords, 4);
+      updateInfo();
+    }
+  }
+
+  // Load game on start
+  loadGame();
+
+  // Save on airport change
+  const originalMove = move;
+  move = function (direction) {
+    originalMove(direction);
+    saveGame();
+  };
+</script>
+</body>
+</html>
