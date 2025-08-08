@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Airplane Tycoon</title>
+<style>
+  /* Same styles as before (airport list, map, topbar, upgrades, etc.) */
+  /* ... (keep previous CSS here) ... */
+</style>
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
+/>
+</head>
+<body>
+<div id="airport-list">
+  <h2>Choose Starting Airport</h2>
+  <ul id="airport-items"></ul>
+</div>
+
+<div id="map"></div>
+
+<div id="topbar" style="display:none;">
+  <div>💰 Money: $<span id="money">0</span></div>
+  <div>✈️ Planes: <span id="planes">0</span></div>
+  <div>🚀 Plane Tier: <span id="plane-tier">Basic</span></div>
+  <div>⭐ VIP Customers: <span id="vip-status">No</span></div>
+</div>
+
+<div id="upgrades" style="display:none; flex-wrap: wrap;">
+  <button id="buy-plane-btn">Buy Plane ($10,000)</button>
+  <button id="upgrade-plane-btn">Upgrade Plane ($50,000)</button>
+  <button id="unlock-airport-btn">Unlock Airport ($20,000)</button>
+  <button id="buy-vip-btn">Unlock VIP Customers ($100,000)</button>
+  <button id="reset-progress-btn" style="background:#dc3545;">Reset Progress</button>
+</div>
+
+<div id="tutorial-overlay">
+  <div>
+    <h1>Welcome to Airplane Tycoon!</h1>
+    <p>
+      Select your starting airport from the list on the left.<br/>
+      You begin with 1 basic plane and $50,000.<br/>
+      Fly planes between airports to earn money.<br/>
+      Use money to buy more planes, upgrade planes, unlock VIP customers, and unlock more airports.<br/>
+      Expand your airline and become a tycoon!
+    </p>
+    <button id="start-btn">Start Game</button>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+<script>
+  // Airports as before (only showing new/changed parts for brevity here)
+  const airports = [
+    // ...same airports array as before...
+  ];
+
+  let money = 50000;
+  let planes = 1;
+  let currentAirport = null;
+
+  // Plane tiers and their earnings multipliers and upgrade costs
+  const planeTiers = [
+    { name: "Basic", earningsMultiplier: 1, upgradeCost: 50000 },
+    { name: "Advanced", earningsMultiplier: 2, upgradeCost: 150000 },
+    { name: "Luxury", earningsMultiplier: 5, upgradeCost: 500000 },
+  ];
+  let currentPlaneTierIndex = 0;
+
+  // VIP customers
+  let vipUnlocked = false;
+  const vipMultiplier = 2; // Earnings multiplied by 2 when VIP unlocked
+
+  // Map initialization and airport markers - same as before
+
+  // Save/load progress update
+  function saveProgress() {
+    const saveData = {
+      money,
+      planes,
+      currentAirportCode: currentAirport?.code || null,
+      airportsUnlockedCodes: airports.filter(a => a.unlocked).map(a => a.code),
+      currentPlaneTierIndex,
+      vipUnlocked
+    };
+    localStorage.setItem('airplaneTycoonSave', JSON.stringify(saveData));
+  }
+
+  function loadProgress() {
+    const saveDataStr = localStorage.getItem('airplaneTycoonSave');
+    if (!saveDataStr) return false;
+    try {
+      const saveData = JSON.parse(saveDataStr);
+      money = saveData.money ?? money;
+      planes = saveData.planes ?? planes;
+      airports.forEach(a => {
+        a.unlocked = saveData.airportsUnlockedCodes.includes(a.code);
+      });
+      currentAirport = airports.find(a => a.code === saveData.currentAirportCode) || airports.find(a => a.unlocked);
+      currentPlaneTierIndex = saveData.currentPlaneTierIndex ?? 0;
+      vipUnlocked = saveData.vipUnlocked ?? false;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Update topbar info to show plane tier and VIP status
+  const moneySpan = document.getElementById('money');
+  const planesSpan = document.getElementById('planes');
+  const planeTierSpan = document.getElementById('plane-tier');
+  const vipStatusSpan = document.getElementById('vip-status');
+  const topbar = document.getElementById('topbar');
+  const upgrades = document.getElementById('upgrades');
+
+  function updateInfo() {
+    moneySpan.textContent = money.toLocaleString();
+    planesSpan.textContent = planes;
+    planeTierSpan.textContent = planeTiers[currentPlaneTierIndex].name;
+    vipStatusSpan.textContent = vipUnlocked ? "Yes" : "No";
+  }
+
+  // Plane flying and earnings logic
+  let planeIcon = null;
+  let flightProgress = 0;
+  let flightFrom = null;
+  let flightTo = null;
+  const flightSpeed = 0.002;
+
+  function startFlight(fromAirport, toAirport) {
+    flightFrom = fromAirport;
+    flightTo = toAirport;
+    flightProgress = 0;
+
+    if (!planeIcon) {
+      planeIcon = L.marker(flightFrom.coords, {
+        icon: L.divIcon({
+          className: 'plane-icon',
+          html: '✈️',
+          iconSize: [32, 32],
+          iconAnchor: [16, 16]
+        }),
+        interactive: false
+      }).addTo(map);
+    } else {
+      planeIcon.setLatLng(flightFrom.coords);
+      planeIcon.addTo(map);
+    }
+  }
+
+  function animateFlight() {
+    if (!planeIcon || !flightFrom || !flightTo) return;
+
+    flightProgress += flightSpeed;
+    if (flightProgress > 1) {
+      flightProgress = 0;
+      // Calculate earnings
+      let earnings = 2000 * planes * planeTiers[currentPlaneTierIndex].earningsMultiplier;
+      if (vipUnlocked) earnings *= vipMultiplier;
+      money += earnings;
+      updateInfo();
+      saveProgress();
+
+      // Swap flight direction
+      const temp = flightFrom;
+      flightFrom = flightTo;
+      flightTo = temp;
+    }
+
+    const lat = flightFrom.coords[0] + (flightTo.coords[0] - flightFrom.coords[0]) * flightProgress;
+    const lng = flightFrom.coords[1] + (flightTo.coords[1] - flightFrom.coords[1]) * flightProgress;
+    planeIcon.setLatLng([lat, lng]);
+  }
+
+  // Upgrade buttons
+  const buyPlaneBtn = document.getElementById('buy-plane-btn');
+  const upgradePlaneBtn = document.getElementById('upgrade-plane-btn');
+  const unlockAirportBtn = document.getElementById('unlock-airport-btn');
+  const buyVipBtn = document.getElementById('buy-vip-btn');
+  const resetBtn = document.getElementById('reset-progress-btn');
+
+  buyPlaneBtn.onclick = () => {
+    if (money >= 10000) {
+      money -= 10000;
+      planes += 1;
+      updateInfo();
+      saveProgress();
+      updateButtons();
+    }
+  };
+
+  upgradePlaneBtn.onclick = () => {
+    if (currentPlaneTierIndex < planeTiers.length - 1) {
+      const nextTier = planeTiers[currentPlaneTierIndex + 1];
+      if (money >= nextTier.upgradeCost) {
+        money -= nextTier.upgradeCost;
+        currentPlaneTierIndex++;
+        updateInfo();
+        saveProgress();
+        updateButtons();
+      }
+    }
+  };
+
+  unlockAirportBtn.onclick = () => {
+    const lockedAirport = airports.find(a => !a.unlocked);
+    if (lockedAirport && money >= lockedAirport.cost) {
+      money -= lockedAirport.cost;
+      lockedAirport.unlocked = true;
+      const marker = airportMarkers.get(lockedAirport.code);
+      if (marker) marker.setPopupContent(`<b>${lockedAirport.code}</b><br>${lockedAirport.name}`);
+      updateAirportList();
+      updateMarkers();
+      updateInfo();
+      saveProgress();
+      updateButtons();
+    }
+  };
+
+  buyVipBtn.onclick = () => {
+    if (!vipUnlocked && money >= 100000) {
+      money -= 100000;
+      vipUnlocked = true;
+      updateInfo();
+      saveProgress();
+      updateButtons();
+    }
+  };
+
+  resetBtn.onclick = () => {
+    if (confirm("Are you sure you want to reset your progress? This cannot be undone.")) {
+      localStorage.removeItem('airplaneTycoonSave');
+      location.reload();
+    }
+  };
+
+  function updateButtons() {
+    buyPlaneBtn.disabled = money < 10000;
+    unlockAirportBtn.disabled = !airports.some(a => !a.unlocked && money >= a.cost);
+    upgradePlaneBtn.disabled = (currentPlaneTierIndex >= planeTiers.length - 1) || money < planeTiers[currentPlaneTierIndex + 1].upgradeCost;
+    buyVipBtn.disabled = vipUnlocked || money < 100000;
+  }
+
+  // Airport list and map setup as before
+  // (Including updateAirportList(), updateMarkers(), etc.)
+
+  // Tutorial and game start logic as before...
+
+  // Animate loop
+  function gameLoop() {
+    animateFlight();
+    requestAnimationFrame(gameLoop);
+  }
+  requestAnimationFrame(gameLoop);
+
+  // Initialize game on load
+  // ... loadProgress, show tutorial or start game UI as before ...
+</script>
+</body>
+</html>
