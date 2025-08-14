@@ -30,8 +30,9 @@ h2,h3 { margin:5px 0; }
   <h3>Planes</h3>
   <div id="planes-list"></div>
   <button id="buy-plane-btn">Buy Basic Plane ($1,000)</button>
-  
+
   <button id="tutorial-btn">Tutorial</button>
+  <button id="restart-btn" style="background:#f44336;color:white;">Restart Game</button>
 </div>
 
 <div id="map"></div>
@@ -182,6 +183,22 @@ document.getElementById('unlock-airport-btn').onclick = ()=>{
 // --- Tutorial ---
 document.getElementById('tutorial-btn').onclick = ()=>{ tutorialDiv.style.display='block'; };
 document.getElementById('gotit-btn').onclick = ()=>{ tutorialDiv.style.display='none'; };
+
+// --- Restart Game ---
+document.getElementById('restart-btn').onclick = ()=>{
+  if(confirm("Are you sure you want to restart the game? All progress will be lost.")){
+    money = 25000;
+    unlockedAirports = ['JFK','LAX','LHR'];
+    planes = [];
+    // Reset map markers
+    for(const code in airportMarkers){
+      airportMarkers[code].setOpacity(unlockedAirports.includes(code)?1:0.3);
+    }
+    saveGame();
+    updateUI();
+    alert("Game restarted!");
+  }
+};
 
 // --- Plane Selection ---
 planesListEl.addEventListener('click',e=>{
