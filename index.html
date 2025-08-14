@@ -9,7 +9,7 @@
 body { margin:0; display:flex; font-family:sans-serif; height:100vh; }
 #panel { width:300px; background:#f0f0f0; padding:10px; overflow-y:auto; }
 #map { flex:1; height:100vh; min-width:0; width:100%; }
-button { margin:5px 0; width:100%; padding:5px; }
+button { margin:5px 0; width:100%; padding:5px; cursor:pointer; }
 h2,h3 { margin:5px 0; }
 .airport-item, .plane-item { margin-bottom:3px; cursor:pointer; display:flex; justify-content:space-between; }
 .airport-item:hover, .plane-item:hover { background:#ddd; }
@@ -34,9 +34,7 @@ h2,h3 { margin:5px 0; }
   color:white;
   border:none;
   border-radius:5px;
-  cursor:pointer;
 }
-#gotit-btn:hover { background:#45a049; }
 #notification {
   position:fixed; top:10px; left:50%; transform:translateX(-50%);
   background:rgba(0,0,0,0.8); color:white; padding:10px 20px; border-radius:5px;
@@ -87,7 +85,9 @@ h2,h3 { margin:5px 0; }
 let money = parseInt(localStorage.getItem('money')) || 25000;
 let unlockedAirports = JSON.parse(localStorage.getItem('unlockedAirports')) || ['JFK','LAX','LHR'];
 let planes = JSON.parse(localStorage.getItem('planes')) || [];
+let selectedPlaneIndex = null;
 
+// --- Airports ---
 const airports = {
   'JFK': {name:'John F. Kennedy Intl', lat:40.6413, lng:-73.7781},
   'LAX': {name:'Los Angeles Intl', lat:33.9416, lng:-118.4085},
@@ -98,27 +98,8 @@ const airports = {
   'ATL': {name:'Hartsfield-Jackson Atlanta', lat:33.6407, lng:-84.4277},
   'DXB': {name:'Dubai Intl', lat:25.2532, lng:55.3657},
   'SIN': {name:'Singapore Changi', lat:1.3644, lng:103.9915},
-  'SYD': {name:'Sydney Kingsford Smith', lat:-33.9399, lng:151.1753},
-  'FRA': {name:'Frankfurt Intl', lat:50.0379, lng:8.5622},
-  'AMS': {name:'Amsterdam Schiphol', lat:52.3105, lng:4.7683},
-  'YYZ': {name:'Toronto Pearson', lat:43.6777, lng:-79.6248},
-  'ICN': {name:'Incheon Intl', lat:37.4602, lng:126.4407},
-  'MEX': {name:'Mexico City Intl', lat:19.4361, lng:-99.0719},
-  'GRU': {name:'São Paulo Guarulhos', lat:-23.4356, lng:-46.4731},
-  'SFO': {name:'San Francisco Intl', lat:37.6188, lng:-122.375},
-  'SEA': {name:'Seattle-Tacoma Intl', lat:47.4502, lng:-122.3088},
-  'CLT': {name:'Charlotte Douglas', lat:35.2140, lng:-80.9431},
-  'MIA': {name:'Miami Intl', lat:25.7933, lng:-80.2906},
-  'LGW': {name:'London Gatwick', lat:51.1537, lng:-0.1821},
-  'MAD': {name:'Madrid Barajas', lat:40.4983, lng:-3.5676},
-  'BCN': {name:'Barcelona El Prat', lat:41.2974, lng:2.0833},
-  'NRT': {name:'Narita Intl', lat:35.7767, lng:140.3186},
-  'BKK': {name:'Suvarnabhumi Bangkok', lat:13.6900, lng:100.7501},
-  'KUL': {name:'Kuala Lumpur Intl', lat:2.7456, lng:101.7101},
-  'DEL': {name:'Indira Gandhi Intl', lat:28.5562, lng:77.1000},
-  'JNB': {name:'O. R. Tambo Intl', lat:-26.1337, lng:28.2420},
-  'CPT': {name:'Cape Town Intl', lat:-33.9648, lng:18.6017},
-  'SYR': {name:'Syracuse Hancock Intl', lat:43.1112, lng:-76.1063}
+  'SYD': {name:'Sydney Kingsford Smith', lat:-33.9399, lng:151.1753}
+  // ... add more airports as needed
 };
 
 const planeLevels = [
@@ -133,6 +114,7 @@ const airportCost = 20000;
 // --- Map ---
 const map = L.map('map').setView([20,0],2);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors'}).addTo(map);
+
 const airportMarkers = {};
 for(const code in airports){
   const marker = L.marker([airports[code].lat, airports[code].lng])
@@ -142,14 +124,10 @@ for(const code in airports){
   if(!unlockedAirports.includes(code)) marker.setOpacity(0.3);
 }
 
-// --- UI ---
+// --- UI Elements ---
 const moneyEl = document.getElementById('money');
 const airportsListEl = document.getElementById('airports-list');
 const planesListEl = document.getElementById('planes-list');
-const tutorialDiv = document.getElementById('tutorial');
-let planeRoutes = [];
-let planeMarkers = [];
-let selectedPlaneIndex = null;
 
 // --- Notifications ---
 function notify(msg,duration=3000){
@@ -169,38 +147,32 @@ function updateUI(){
     div.classList.add('airport-item');
     airportsListEl.appendChild(div);
   });
+
   planesListEl.innerHTML = '';
   if(planes.length===0){ planesListEl.textContent = 'No planes yet'; }
   else {
     planes.forEach((plane,i)=>{
       const level = plane.level || 0;
-      const repairCost = 500*(level+1);
-      const ratingStars = '★'.repeat(plane.rating||5)+'☆'.repeat(5-(plane.rating||5));
       const div = document.createElement('div');
       div.classList.add('plane-item');
-      div.innerHTML = `<span>${plane.type || planeLevels[0].name} (Plane ${i+1}) ${plane.route?'- '+plane.route:''} ${plane.needsMaintenance?'[Needs Maintenance]':''} [${ratingStars}]</span>
-      ${planeLevels[level+1]?'<button onclick="upgradePlane('+i+')">Upgrade $'+planeLevels[level+1].upgradeCost+'</button>':''}
-      ${plane.needsMaintenance?'<button onclick="repairPlane('+i+')">Repair $'+repairCost+'</button>':''}`;
+      div.textContent = `${plane.type || planeLevels[0].name} (Plane ${i+1}) ${plane.route?'- '+plane.route:''}`;
       planesListEl.appendChild(div);
     });
   }
-  updateRoutes();
 }
 
-// --- Save ---
 function saveGame(){
-  localStorage.setItem('money',money);
-  localStorage.setItem('unlockedAirports',JSON.stringify(unlockedAirports));
-  localStorage.setItem('planes',JSON.stringify(planes));
+  localStorage.setItem('money', money);
+  localStorage.setItem('unlockedAirports', JSON.stringify(unlockedAirports));
+  localStorage.setItem('planes', JSON.stringify(planes));
 }
 
 // --- Buy Plane ---
 document.getElementById('buy-plane-btn').onclick = ()=>{
-  if(money>=planeLevels[0].upgradeCost){
-    money -= planeLevels[0].upgradeCost;
-    planes.push({ type: planeLevels[0].name, income: planeLevels[0].income, speed: planeLevels[0].speed, level:0, route:null, currentAirport:unlockedAirports[0], maintenance:3, needsMaintenance:false, rating:5, incomeMultiplier:1 });
-    saveGame();
-    updateUI();
+  if(money>=1000){
+    money -= 1000;
+    planes.push({type:'Tiny Plane', level:0, income:50, speed:1, route:null, currentAirport:unlockedAirports[0], maintenance:3});
+    saveGame(); updateUI();
     notify("Tiny Plane purchased!");
   } else notify("Not enough money!");
 };
@@ -213,8 +185,7 @@ document.getElementById('unlock-airport-btn').onclick = ()=>{
         money -= airportCost;
         unlockedAirports.push(code);
         airportMarkers[code].setOpacity(1);
-        saveGame();
-        updateUI();
+        saveGame(); updateUI();
         notify(`${code} unlocked!`);
       } else notify("Not enough money!");
       return;
@@ -224,133 +195,44 @@ document.getElementById('unlock-airport-btn').onclick = ()=>{
 };
 
 // --- Tutorial ---
-document.getElementById('tutorial-btn').onclick = ()=>{ tutorialDiv.style.display='block'; };
-document.getElementById('gotit-btn').onclick = ()=>{ tutorialDiv.style.display='none'; };
+document.getElementById('tutorial-btn').onclick = ()=>{ document.getElementById('tutorial').style.display='block'; };
+document.getElementById('gotit-btn').onclick = ()=>{ document.getElementById('tutorial').style.display='none'; };
 
 // --- Restart ---
 document.getElementById('restart-btn').onclick = ()=>{
   if(confirm("Restart game? All progress lost.")){
     money = 25000; unlockedAirports=['JFK','LAX','LHR']; planes=[]; 
     for(const code in airportMarkers){ airportMarkers[code].setOpacity(unlockedAirports.includes(code)?1:0.3);}
-    saveGame();
-    updateUI();
-    notify("Game restarted!");
+    saveGame(); updateUI(); notify("Game restarted!");
   }
 };
 
-// --- Upgrade Plane ---
-function upgradePlane(index){
-  const plane = planes[index];
-  const currentLevel = plane.level || 0;
-  const nextLevel = planeLevels[currentLevel+1];
-  if(!nextLevel){ notify("Plane at max level!"); return; }
-  if(money >= nextLevel.upgradeCost){
-    money -= nextLevel.upgradeCost;
-    plane.level = currentLevel+1;
-    plane.type = nextLevel.name;
-    plane.income = nextLevel.income;
-    plane.speed = nextLevel.speed;
-    saveGame();
-    updateUI();
-    notify(`${plane.type} upgraded!`);
-  } else notify("Not enough money to upgrade!");
-}
-
-// --- Repair Plane ---
-function repairPlane(index){
-  const plane = planes[index];
-  if(!plane.needsMaintenance) return;
-  const cost = 500*(plane.level+1);
-  if(money>=cost){
-    money -= cost;
-    plane.maintenance = 3;
-    plane.needsMaintenance = false;
-    saveGame();
-    updateUI();
-    notify(`Plane ${index+1} repaired!`);
-  } else notify("Not enough money to repair!");
-}
-
 // --- Plane Selection ---
-planesListEl.addEventListener('click',e=>{
-  if(e.target.classList.contains('plane-item') || e.target.parentElement.classList.contains('plane-item')){
-    const el = e.target.classList.contains('plane-item')?e.target:e.target.parentElement;
-    selectedPlaneIndex = Array.from(planesListEl.children).indexOf(el);
+planesListEl.addEventListener('click', e=>{
+  if(e.target.classList.contains('plane-item')){
+    selectedPlaneIndex = Array.from(planesListEl.children).indexOf(e.target);
     notify(`Selected Plane ${selectedPlaneIndex+1}. Click an airport to assign route.`);
   }
 });
 
 // --- Assign Route ---
-airportsListEl.addEventListener('click',e=>{
+airportsListEl.addEventListener('click', e=>{
   if(selectedPlaneIndex !== null && e.target.classList.contains('airport-item')){
     const airportText = e.target.textContent;
     const airportCode = airportText.match(/\((.*?)\)/)[1];
     const plane = planes[selectedPlaneIndex];
-    if(plane.needsMaintenance){ notify("Plane needs maintenance!"); return; }
-    if(unlockedAirports.includes(airportCode)){
-      plane.route = airportCode;
-      selectedPlaneIndex = null;
-      saveGame();
-      updateUI();
-      notify(`Plane assigned to ${airportCode}`);
-    } else notify("Airport locked!");
+    plane.route = airportCode;
+    selectedPlaneIndex = null;
+    saveGame(); updateUI();
+    notify(`Plane assigned to ${airportCode}`);
+  }
 });
 
 // --- Passive Income ---
 setInterval(()=>{
-  planes.forEach(p=>money+=p.income*p.incomeMultiplier);
-  saveGame();
-  updateUI();
+  planes.forEach(p=>money+=p.income);
+  saveGame(); updateUI();
 },5000);
-
-// --- Plane Routes & Movement ---
-function updateRoutes(){
-  planeRoutes.forEach(l=>map.removeLayer(l));
-  planeMarkers.forEach(m=>map.removeLayer(m));
-  planeRoutes=[]; planeMarkers=[];
-  planes.forEach((plane,i)=>{
-    if(plane.route && !plane.needsMaintenance){
-      const startCode = plane.currentAirport;
-      const endCode = plane.route;
-      const line = L.polyline([[airports[startCode].lat,airports[startCode].lng],[airports[endCode].lat,airports[endCode].lng]],{color:'blue'}).addTo(map);
-      planeRoutes.push(line);
-      const planeIcon = L.icon({iconUrl:'https://cdn-icons-png.flaticon.com/512/69/69524.png',iconSize:[25,25]});
-      const marker = L.marker([airports[startCode].lat,airports[startCode].lng],{icon:planeIcon}).addTo(map);
-      planeMarkers.push(marker);
-      let progress=0, steps=100/plane.speed;
-      const latStep = (airports[endCode].lat - airports[startCode].lat)/steps;
-      const lngStep = (airports[endCode].lng - airports[startCode].lng)/steps;
-      const interval = setInterval(()=>{
-        if(progress>=steps){
-          clearInterval(interval);
-          marker.setLatLng([airports[endCode].lat,airports[endCode].lng]);
-          plane.currentAirport=endCode;
-          plane.maintenance -= 1;
-          if(plane.maintenance <=0) plane.needsMaintenance = true;
-          plane.incomeMultiplier = 1;
-          saveGame();
-        } else {
-          marker.setLatLng([airports[startCode].lat+latStep*progress,airports[startCode].lng+lngStep*progress]);
-          progress++;
-        }
-      },50);
-    }
-  });
-}
-
-// --- Random Events ---
-function randomEvent(){
-  const events = [
-    {msg:'Storm at LAX! Flights delayed.', effect:()=>{ planes.forEach(p=>{ if(p.route==='LAX') p.route=null; }); }},
-    {msg:'Fuel prices spike! Repair costs doubled for next 3 flights.', effect:()=>{ planes.forEach(p=>p.fuelSurge=true); }},
-    {msg:'Airport strike at JFK! Plane cannot depart this airport this round.', effect:()=>{ planes.forEach(p=>{ if(p.currentAirport==='JFK') p.route=null; }); }},
-    {msg:'Good press! Passenger demand increases, income +50% for 1 round.', effect:()=>{ planes.forEach(p=>p.incomeMultiplier=1.5); }},
-  ];
-  const e = events[Math.floor(Math.random()*events.length)];
-  e.effect();
-  notify('Event: '+e.msg,5000);
-}
-setInterval(randomEvent,60000);
 
 updateUI();
 
