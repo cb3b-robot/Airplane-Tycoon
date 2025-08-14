@@ -13,8 +13,35 @@ button { margin:5px 0; width:100%; padding:5px; }
 h2,h3 { margin:5px 0; }
 .airport-item, .plane-item { margin-bottom:3px; cursor:pointer; }
 .airport-item:hover, .plane-item:hover { background:#ddd; }
-#tutorial { background: rgba(0,0,0,0.8); color:#fff; position:absolute; top:50%; left:50%;
-  transform:translate(-50%,-50%); padding:20px; display:none; max-width:300px; }
+#tutorial {
+  background: rgba(0,0,0,0.9);
+  color:#fff;
+  position:fixed;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  padding:20px;
+  display:none;
+  max-width:300px;
+  z-index:10000;
+  border-radius:10px;
+  box-shadow:0 0 10px rgba(0,0,0,0.5);
+}
+#gotit-btn {
+  margin-top:10px;
+  padding:5px 10px;
+  background:#4CAF50;
+  color:white;
+  border:none;
+  border-radius:5px;
+  cursor:pointer;
+}
+#gotit-btn:hover { background:#45a049; }
+#notification {
+  position:fixed; top:10px; left:50%; transform:translateX(-50%);
+  background:rgba(0,0,0,0.8); color:white; padding:10px 20px; border-radius:5px;
+  display:none; z-index:9999; font-family:sans-serif;
+}
 </style>
 </head>
 <body>
@@ -46,6 +73,8 @@ h2,h3 { margin:5px 0; }
   5. Unlock more airports to expand your airline!</p>
   <button id="gotit-btn">Got it</button>
 </div>
+
+<div id="notification"></div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script>
@@ -113,18 +142,26 @@ const tutorialDiv = document.getElementById('tutorial');
 let planeRoutes = [];
 let selectedPlaneIndex = null;
 
+// --- Notifications ---
+function notify(msg, duration=3000){
+  const notification = document.getElementById('notification');
+  notification.textContent = msg;
+  notification.style.display='block';
+  setTimeout(()=>{ notification.style.display='none'; }, duration);
+}
+
 // --- Update UI ---
 function updateUI(){
   moneyEl.textContent = money;
 
-  // Airports list
+  // Airports list - only show unlocked airports
   airportsListEl.innerHTML = '';
-  for(const code in airports){
+  unlockedAirports.forEach(code=>{
     const div = document.createElement('div');
     div.textContent = `${airports[code].name} (${code})`;
     div.classList.add('airport-item');
     airportsListEl.appendChild(div);
-  }
+  });
 
   // Planes list
   planesListEl.innerHTML = '';
@@ -160,7 +197,8 @@ document.getElementById('buy-plane-btn').onclick = ()=>{
     planes.push({route:null});
     saveGame();
     updateUI();
-  } else alert("Not enough money!");
+    notify("Plane purchased!");
+  } else notify("Not enough money!");
 };
 
 // --- Unlock Airport ---
@@ -173,11 +211,12 @@ document.getElementById('unlock-airport-btn').onclick = ()=>{
         airportMarkers[code].setOpacity(1);
         saveGame();
         updateUI();
-      } else alert("Not enough money!");
+        notify(`${code} unlocked!`);
+      } else notify("Not enough money!");
       return;
     }
   }
-  alert("No more airports to unlock!");
+  notify("No more airports to unlock!");
 };
 
 // --- Tutorial ---
@@ -195,7 +234,7 @@ document.getElementById('restart-btn').onclick = ()=>{
     }
     saveGame();
     updateUI();
-    alert("Game restarted!");
+    notify("Game restarted!");
   }
 };
 
@@ -203,7 +242,7 @@ document.getElementById('restart-btn').onclick = ()=>{
 planesListEl.addEventListener('click',e=>{
   if(e.target.classList.contains('plane-item')){
     selectedPlaneIndex = Array.from(planesListEl.children).indexOf(e.target);
-    alert(`Selected Plane ${selectedPlaneIndex+1}. Now click an airport to assign route.`);
+    notify(`Selected Plane ${selectedPlaneIndex+1}. Now click an airport to assign route.`);
   }
 });
 
@@ -211,13 +250,14 @@ planesListEl.addEventListener('click',e=>{
 airportsListEl.addEventListener('click', e=>{
   if(selectedPlaneIndex !== null && e.target.classList.contains('airport-item')){
     const airportText = e.target.textContent;
-    const airportCode = airportText.match(/\((.*?)\)/)[1]; // extract code
+    const airportCode = airportText.match(/\((.*?)\)/)[1];
     if(unlockedAirports.includes(airportCode)){
       planes[selectedPlaneIndex].route = airportCode;
       selectedPlaneIndex = null;
       saveGame();
       updateUI();
-    } else alert("Airport locked! Unlock it first.");
+      notify(`Plane assigned to ${airportCode}`);
+    } else notify("Airport locked! Unlock it first.");
   }
 });
 
@@ -234,7 +274,7 @@ function updateRoutes(){
   planeRoutes=[];
   planes.forEach(plane=>{
     if(plane.route){
-      const startCode = unlockedAirports[0]; // default starting airport
+      const startCode = unlockedAirports[0];
       const endCode = plane.route;
       const line = L.polyline([
         [airports[startCode].lat, airports[startCode].lng],
