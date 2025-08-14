@@ -107,21 +107,31 @@ const airportCost = 20000;
 // --- Map ---
 const map = L.map('map').setView([20,0],2);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors'}).addTo(map);
+
+// Airport icon
+const airportIcon = L.icon({
+  iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png',
+  iconSize: [32,32],
+  iconAnchor: [16,32]
+});
+
+// Plane icon
+const planeIcon = L.icon({
+  iconUrl: 'https://cdn-icons-png.flaticon.com/512/16/16476.png',
+  iconSize: [32,32],
+  iconAnchor: [16,16]
+});
+
 const airportMarkers = {};
 for(const code in airports){
-  const marker = L.marker([airports[code].lat, airports[code].lng])
+  const marker = L.marker([airports[code].lat, airports[code].lng], {icon: airportIcon})
     .addTo(map)
     .bindPopup(`${airports[code].name} (${code})`);
   airportMarkers[code] = marker;
   if(!unlockedAirports.includes(code)) marker.setOpacity(0.3);
 }
 
-// Plane icon
-const planeIcon = L.icon({
-  iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png',
-  iconSize: [32,32],
-  iconAnchor: [16,16]
-});
+// Plane markers
 const planeMarkers = [];
 
 // --- UI Elements ---
@@ -141,6 +151,7 @@ function notify(msg,duration=3000){
 function updateUI(){
   moneyEl.textContent = money;
 
+  // Airports list
   airportsListEl.innerHTML = '';
   unlockedAirports.forEach(code=>{
     const div = document.createElement('div');
@@ -150,6 +161,7 @@ function updateUI(){
     airportsListEl.appendChild(div);
   });
 
+  // Planes list
   planesListEl.innerHTML = '';
   if(planes.length===0){ planesListEl.textContent = 'No planes yet'; }
   else {
@@ -174,12 +186,22 @@ function updateUI(){
       autoBtn.style.background = plane.autoFly ? '#4CAF50' : '#2196F3';
       autoBtn.onclick = ()=>{
         plane.autoFly = !plane.autoFly;
-        saveGame();
-        updateUI();
+        saveGame(); updateUI();
       };
       div.appendChild(autoBtn);
 
       planesListEl.appendChild(div);
+
+      // Update plane popup
+      if(planeMarkers[i]){
+        planeMarkers[i].setPopupContent(`
+          <b>${plane.type}</b><br>
+          Airport: ${plane.currentAirport}<br>
+          Next Route: ${plane.route || 'None'}<br>
+          Level: ${plane.level}<br>
+          Auto-Fly: ${plane.autoFly ? 'ON' : 'OFF'}
+        `);
+      }
     });
   }
 }
@@ -197,7 +219,15 @@ document.getElementById('buy-plane-btn').onclick = ()=>{
     money -= 1000;
     const plane = {type:'Tiny Plane', level:0, income:100, speed:1, route:null, currentAirport:unlockedAirports[0], autoFly:false, flying:false};
     planes.push(plane);
-    const marker = L.marker([airports[plane.currentAirport].lat, airports[plane.currentAirport].lng], {icon: planeIcon}).addTo(map);
+    const marker = L.marker([airports[plane.currentAirport].lat, airports[plane.currentAirport].lng], {icon: planeIcon})
+      .addTo(map)
+      .bindPopup(`
+        <b>${plane.type}</b><br>
+        Airport: ${plane.currentAirport}<br>
+        Next Route: None<br>
+        Level: 0<br>
+        Auto-Fly: OFF
+      `);
     planeMarkers.push(marker);
     saveGame(); updateUI();
     notify("Tiny Plane purchased!");
@@ -254,7 +284,7 @@ function upgradePlane(i){
   }
 }
 
-// --- Plane movement ---
+// --- Move Plane ---
 function movePlane(planeIndex, destCode){
   const plane = planes[planeIndex];
   if(plane.flying) return;
@@ -279,22 +309,20 @@ function movePlane(planeIndex, destCode){
       plane.currentAirport = destCode;
       plane.route = null;
       plane.flying = false;
-      money += plane.income; // realistic earning
+      money += plane.income;
       notify(`Plane ${planeIndex+1} arrived at ${destCode} and earned $${plane.income}!`);
       saveGame(); updateUI();
     }
   }, 50);
 }
 
-// --- Select Plane ---
+// --- Plane selection & manual route ---
 planesListEl.addEventListener('click', e=>{
   if(e.target.classList.contains('plane-item')){
     selectedPlaneIndex = Array.from(planesListEl.children).indexOf(e.target);
     notify(`Selected Plane ${selectedPlaneIndex+1}. Click an airport to assign route.`);
   }
 });
-
-// --- Assign Route manually ---
 airportsListEl.addEventListener('click', e=>{
   if(selectedPlaneIndex !== null && e.target.classList.contains('airport-item')){
     const code = e.target.getAttribute('data-code');
@@ -303,7 +331,7 @@ airportsListEl.addEventListener('click', e=>{
   }
 });
 
-// --- Passive income and Auto-Fly ---
+// --- Passive income and auto-fly ---
 setInterval(()=>{
   planes.forEach((plane,i)=>{
     money += Math.round(plane.income*0.05); // small passive income
