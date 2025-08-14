@@ -35,6 +35,7 @@ button { margin: 2px; }
         <button onclick="restartGame()">Restart Game</button>
         <button onclick="unlockAirport()">Unlock Airport</button>
         <button onclick="buyPlane()">Buy Plane</button>
+        <button id="autoMaintainBtn" onclick="toggleAutoMaintain()">Auto-Maintain: OFF</button>
     </div>
 </div>
 <div id="notification" class="notification"></div>
@@ -47,6 +48,8 @@ button { margin: 2px; }
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script>
 // ===== GAME DATA =====
+let autoMaintainEnabled = false;
+
 const airportsData = [
   { code:'JFK',name:'John F. Kennedy Intl',lat:40.6413,lon:-73.7781 },
   { code:'LHR',name:'London Heathrow',lat:51.4700,lon:-0.4543 },
@@ -72,7 +75,6 @@ const airportsData = [
   { code:'GRU',name:'São Paulo Guarulhos',lat:-23.4356,lon:-46.4731 },
   { code:'JNB',name:'O.R. Tambo Intl',lat:-26.1337,lon:28.2420 },
   { code:'DEL',name:'Indira Gandhi Intl',lat:28.5562,lon:77.1000 },
-  { code:'MAD',name:'Madrid-Barajas',lat:40.4983,lon:-3.5676 },
   { code:'MUC',name:'Munich',lat:48.3538,lon:11.7861 },
   { code:'BCN',name:'Barcelona',lat:41.2974,lon:2.0833 },
   { code:'FCO',name:'Rome Fiumicino',lat:41.8003,lon:12.2389 },
@@ -87,15 +89,12 @@ const airportsData = [
   { code:'VIE',name:'Vienna Intl',lat:48.1103,lon:16.5697 },
   { code:'ZRH',name:'Zurich',lat:47.4647,lon:8.5492 },
   { code:'PRG',name:'Prague',lat:50.1000,lon:14.2600 },
-  { code:'OSL',name:'Oslo',lat:60.1939,lon:11.1004 },
   { code:'MAN',name:'Manchester',lat:53.3651,lon:-2.2725 },
   { code:'DME',name:'Moscow Domodedovo',lat:55.4088,lon:37.9063 },
   { code:'SVO',name:'Moscow Sheremetyevo',lat:55.9726,lon:37.4146 },
   { code:'LED',name:'St Petersburg Pulkovo',lat:59.8003,lon:30.2625 },
-  { code:'ICN',name:'Seoul Incheon',lat:37.4602,lon:126.4407 },
   { code:'HKG',name:'Hong Kong Intl',lat:22.3080,lon:113.9185 },
   { code:'BOM',name:'Mumbai Chhatrapati Shivaji',lat:19.0886,lon:72.8679 },
-  { code:'DEL',name:'Delhi',lat:28.5562,lon:77.1000 },
   { code:'CAN',name:'Guangzhou Baiyun',lat:23.3924,lon:113.2988 },
   { code:'SHA',name:'Shanghai Hongqiao',lat:31.2000,lon:121.3333 },
   { code:'PVG',name:'Shanghai Pudong',lat:31.1443,lon:121.8083 }
@@ -162,6 +161,12 @@ function saveGame(){ localStorage.setItem('airplaneTycoonSave', JSON.stringify(g
 function loadGame(){ const saved=localStorage.getItem('airplaneTycoonSave'); if(saved) gameData=JSON.parse(saved); }
 function restartGame(){ if(confirm('Restart?')) { localStorage.removeItem('airplaneTycoonSave'); location.reload(); } }
 function closeTutorial(){ document.getElementById('tutorial').style.display='none'; }
+
+// ===== Auto-Maintain =====
+function toggleAutoMaintain(){
+    autoMaintainEnabled = !autoMaintainEnabled;
+    document.getElementById('autoMaintainBtn').innerText = `Auto-Maintain: ${autoMaintainEnabled ? 'ON' : 'OFF'}`;
+}
 
 // ===== Plane Functions =====
 function upgradePlane(id){
@@ -244,6 +249,17 @@ function flyPlane(plane){
             if(r<0.1) { plane.rating -= 5; notify('Passengers unhappy due to turbulence!'); }
             else if(r<0.2) { gameData.money += 500; notify('Good weather! Extra passengers paid $500'); }
 
+            // Auto-Maintain
+            if(autoMaintainEnabled){
+                const maintainCost = planeTypes.find(pt=>pt.name===plane.type).cost * 0.1;
+                if(gameData.money >= maintainCost){
+                    gameData.money -= maintainCost;
+                    plane.maintenance = true;
+                    plane.rating = 100;
+                    notify(`${plane.type} automatically maintained for $${Math.floor(maintainCost)}`);
+                }
+            }
+
             notify(`Flight complete! Earned $${Math.floor(earnings)}`);
             updateUI(); saveGame();
 
@@ -252,13 +268,4 @@ function flyPlane(plane){
     }, 1000/planeTypes.find(pt=>pt.name===plane.type).speed);
 }
 function calculateEarnings(plane,start,end){ const d=getDistance(start.lat,start.lon,end.lat,end.lon); const pt=planeTypes.find(pt=>pt.name===plane.type); return d*10*pt.earningsMultiplier*(plane.rating/100); }
-function getDistance(lat1,lon1,lat2,lon2){ const toRad=x=>x*Math.PI/180; const R=6371,dLat=toRad(lat2-lat1),dLon=toRad(lon2-lon1); const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2; return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)); }
-
-// ===== Unlock Airport =====
-function unlockAirport(){
-    const available=airportsData.map(a=>a.code).filter(c=>!gameData.unlockedAirports.includes(c));
-    if(available.length===0){ notify('All airports unlocked'); return; }
-    const code=prompt('Enter airport code to unlock:');
-    if(!available.includes(code)) { notify('Invalid code or already unlocked'); return; }
-    const cost = 50000 + (gameData.unlockedAirports.length-3)*10000;
-    if(gameData.money>=cost){ gameData.money-=cost; gameData.unlockedAirports.push(code); updateAirports(); updateUI(); saveGame(); notify(`Unlocked ${code}
+function getDistance(lat1,lon1,lat2
