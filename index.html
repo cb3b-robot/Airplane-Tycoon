@@ -7,8 +7,8 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <style>
     body, html { margin:0; padding:0; font-family: sans-serif; height: 100%; }
-    #map { width: 100%; height: 65%; }
-    #ui { padding: 10px; background: #f0f0f0; height: 35%; overflow-y: auto; }
+    #map { width: 100%; height: 60%; }
+    #ui { padding: 10px; background: #f0f0f0; height: 40%; overflow-y: auto; }
     .section { margin-bottom: 10px; }
     button { margin: 2px; }
     .notification { 
@@ -33,6 +33,7 @@
     <div class="section">
         <button onclick="restartGame()">Restart Game</button>
         <button onclick="unlockAirport()">Unlock Airport</button>
+        <button onclick="buyPlane()">Buy Plane</button>
     </div>
 </div>
 <div id="notification" class="notification"></div>
@@ -170,6 +171,15 @@ function maintainPlane(id){
     else notify('Not enough money');
     updateUI();
 }
+function buyPlane(){
+    const pt = planeTypes[0]; // Tiny Plane
+    if(gameData.money >= pt.cost){
+        gameData.money -= pt.cost;
+        const newPlane = { id:gameData.planeIdCounter++, type:pt.name, location:gameData.unlockedAirports[0], destination:null, status:'idle', rating:100, maintenance:true };
+        gameData.planes.push(newPlane);
+        updateUI(); saveGame(); notify(`Bought new ${pt.name}!`);
+    } else notify(`Not enough money! Plane costs $${pt.cost}`);
+}
 
 // ===== Flight Functions =====
 function assignRoute(id){ const plane=gameData.planes.find(p=>p.id===id); const dest=prompt('Enter airport code:'); if(gameData.unlockedAirports.includes(dest)&&dest!==plane.location){ plane.destination=dest; plane.status='flying'; flyPlane(plane); notify(`${plane.type} flying to ${dest}`);} else notify('Invalid destination'); }
@@ -203,15 +213,3 @@ function unlockAirport(){
     if(!available.includes(code)){ notify('Invalid airport code'); return; }
     const extraAirports = gameData.unlockedAirports.length - startingAirports.length;
     const cost = 50000 + Math.max(0,extraAirports)*10000;
-    if(gameData.money>=cost){ gameData.money-=cost; gameData.unlockedAirports.push(code); updateAirports(); updateUI(); saveGame(); notify(`Unlocked ${code} for $${cost}`); } 
-    else notify(`Not enough money! Airport costs $${cost}`);
-}
-
-// ===== Passive Income =====
-setInterval(()=>{ gameData.money+=100; updateUI(); saveGame(); },5000);
-
-// ===== Load Game =====
-loadGame(); updateUI(); updateAirports();
-</script>
-</body>
-</html>
