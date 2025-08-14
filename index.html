@@ -11,8 +11,8 @@ body { margin:0; display:flex; font-family:sans-serif; height:100vh; }
 #map { flex:1; height:100vh; min-width:0; }
 button { margin:5px 0; width:100%; padding:5px; cursor:pointer; }
 h2,h3 { margin:5px 0; }
-.airport-item, .plane-item, .mission-item { margin-bottom:3px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; }
-.airport-item:hover, .plane-item:hover, .mission-item:hover { background:#ddd; }
+.airport-item, .plane-item { margin-bottom:3px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; }
+.airport-item:hover, .plane-item:hover { background:#ddd; }
 #tutorial {
   background: rgba(0,0,0,0.9);
   color:#fff;
@@ -27,14 +27,7 @@ h2,h3 { margin:5px 0; }
   border-radius:10px;
   box-shadow:0 0 10px rgba(0,0,0,0.5);
 }
-#gotit-btn {
-  margin-top:10px;
-  padding:5px 10px;
-  background:#4CAF50;
-  color:white;
-  border:none;
-  border-radius:5px;
-}
+#gotit-btn { margin-top:10px; padding:5px 10px; background:#4CAF50; color:white; border:none; border-radius:5px; }
 #notification {
   position:fixed; top:10px; left:50%; transform:translateX(-50%);
   background:rgba(0,0,0,0.8); color:white; padding:10px 20px; border-radius:5px;
@@ -58,9 +51,6 @@ h2,h3 { margin:5px 0; }
   <div id="planes-list"></div>
   <button id="buy-plane-btn">Buy Tiny Plane ($1,000)</button>
 
-  <h3>Missions</h3>
-  <div id="missions-list"></div>
-
   <button id="tutorial-btn">Tutorial</button>
   <button id="restart-btn" style="background:#f44336;color:white; margin-top:10px; font-weight:bold;">Restart Game</button>
 </div>
@@ -72,13 +62,11 @@ h2,h3 { margin:5px 0; }
   <p>1. Start with 3 unlocked airports.<br>
   2. Buy a plane and click it to select.<br>
   3. Click an airport to assign the route.<br>
-  4. Planes generate passive income, collect manually too.<br>
+  4. Planes generate passive income.<br>
   5. Upgrade planes to make them stronger.<br>
-  6. Planes need maintenance after each route!<br>
-  7. Unlock more airports to expand your airline!<br>
-  8. Missions give bonus money, complete them to earn extra.<br>
-  9. Random events and passenger ratings affect your income!<br>
-  10. You can use Auto-Fly to have planes fly automatically.</p>
+  6. Planes need maintenance after each route.<br>
+  7. Unlock more airports to expand.<br>
+  8. Auto-Fly can fly your planes automatically.</p>
   <button id="gotit-btn">Got it</button>
 </div>
 
@@ -86,12 +74,10 @@ h2,h3 { margin:5px 0; }
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script>
-
 // --- Game Data ---
 let money = parseInt(localStorage.getItem('money')) || 25000;
 let unlockedAirports = JSON.parse(localStorage.getItem('unlockedAirports')) || ['JFK','LAX','LHR'];
 let planes = JSON.parse(localStorage.getItem('planes')) || [];
-let missions = JSON.parse(localStorage.getItem('missions')) || [];
 let selectedPlaneIndex = null;
 
 // --- Airports ---
@@ -130,15 +116,18 @@ for(const code in airports){
   if(!unlockedAirports.includes(code)) marker.setOpacity(0.3);
 }
 
-// Plane icons
-const planeIcon = L.icon({iconUrl:'https://cdn-icons-png.flaticon.com/512/744/744465.png', iconSize:[32,32]});
+// Plane icon
+const planeIcon = L.icon({
+  iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png',
+  iconSize: [32,32],
+  iconAnchor: [16,16]
+});
 const planeMarkers = [];
 
 // --- UI Elements ---
 const moneyEl = document.getElementById('money');
 const airportsListEl = document.getElementById('airports-list');
 const planesListEl = document.getElementById('planes-list');
-const missionsListEl = document.getElementById('missions-list');
 
 // --- Notifications ---
 function notify(msg,duration=3000){
@@ -167,9 +156,9 @@ function updateUI(){
     planes.forEach((plane,i)=>{
       const div = document.createElement('div');
       div.classList.add('plane-item');
-      div.innerHTML = `${plane.type} (Plane ${i+1}) - Route: ${plane.route || 'None'} - Rating: ${plane.rating||100}`;
-      
-      // Upgrade button with cost
+      div.innerHTML = `${plane.type} (Plane ${i+1}) - Route: ${plane.route || 'None'}`;
+
+      // Upgrade button
       if(plane.level < planeLevels.length-1){
         const nextLevel = plane.level+1;
         const cost = planeLevels[nextLevel].upgradeCost;
@@ -180,7 +169,7 @@ function updateUI(){
         div.appendChild(upgradeBtn);
       }
 
-      // Auto Fly button with ON/OFF
+      // Auto-Fly button
       const autoBtn = document.createElement('button');
       autoBtn.textContent = plane.autoFly ? 'Auto Fly: ON' : 'Auto Fly: OFF';
       autoBtn.classList.add('plane-autofly-btn');
@@ -195,18 +184,6 @@ function updateUI(){
       planesListEl.appendChild(div);
     });
   }
-
-  // Missions
-  missionsListEl.innerHTML = '';
-  if(missions.length===0) missionsListEl.textContent = 'No active missions';
-  else{
-    missions.forEach((m,i)=>{
-      const div = document.createElement('div');
-      div.classList.add('mission-item');
-      div.innerHTML = `${m.desc} - Reward: $${m.reward}`;
-      missionsListEl.appendChild(div);
-    });
-  }
 }
 
 // --- Save Game ---
@@ -214,16 +191,15 @@ function saveGame(){
   localStorage.setItem('money', money);
   localStorage.setItem('unlockedAirports', JSON.stringify(unlockedAirports));
   localStorage.setItem('planes', JSON.stringify(planes));
-  localStorage.setItem('missions', JSON.stringify(missions));
 }
 
 // --- Buy Plane ---
 document.getElementById('buy-plane-btn').onclick = ()=>{
   if(money>=1000){
     money -= 1000;
-    const plane = {type:'Tiny Plane', level:0, income:50, speed:1, route:null, currentAirport:unlockedAirports[0], maintenance:3, rating:100, autoFly:false};
+    const plane = {type:'Tiny Plane', level:0, income:50, speed:1, route:null, currentAirport:unlockedAirports[0], autoFly:false};
     planes.push(plane);
-    const marker = L.marker([airports[plane.currentAirport].lat, airports[plane.currentAirport].lng],{icon:planeIcon}).addTo(map);
+    const marker = L.marker([airports[plane.currentAirport].lat, airports[plane.currentAirport].lng], {icon: planeIcon}).addTo(map);
     planeMarkers.push(marker);
     saveGame(); updateUI();
     notify("Tiny Plane purchased!");
@@ -254,7 +230,7 @@ document.getElementById('gotit-btn').onclick = ()=>{ document.getElementById('tu
 // --- Restart ---
 document.getElementById('restart-btn').onclick = ()=>{
   if(confirm("Restart game? All progress lost.")){
-    money = 25000; unlockedAirports=['JFK','LAX','LHR']; planes=[]; missions=[]; 
+    money = 25000; unlockedAirports=['JFK','LAX','LHR']; planes=[]; 
     planeMarkers.forEach(m=>map.removeLayer(m));
     planeMarkers.length=0;
     for(const code in airportMarkers){ airportMarkers[code].setOpacity(unlockedAirports.includes(code)?1:0.3);}
@@ -276,12 +252,71 @@ function upgradePlane(i){
       plane.speed = planeLevels[nextLevel].speed;
       saveGame(); updateUI();
       notify(`Plane upgraded to ${plane.type}!`);
-    } else notify("Not enough money for upgrade!");
+    } else notify("Not enough money!");
   }
 }
 
-// --- TODO: Plane movement, auto-fly, missions, random events, passive income ---
-// (For brevity, use your previous code to handle movement, auto-fly, missions, and events)
+// --- Plane movement ---
+function movePlane(planeIndex, destCode){
+  const plane = planes[planeIndex];
+  const marker = planeMarkers[planeIndex];
+  const start = airports[plane.currentAirport];
+  const end = airports[destCode];
+  let t=0;
+  const steps = 50;
+  const latStep = (end.lat-start.lat)/steps;
+  const lngStep = (end.lng-start.lng)/steps;
+
+  plane.route = destCode;
+  saveGame(); updateUI();
+
+  const interval = setInterval(()=>{
+    t++;
+    marker.setLatLng([start.lat + latStep*t, start.lng + lngStep*t]);
+    if(t>=steps){
+      clearInterval(interval);
+      plane.currentAirport = destCode;
+      plane.route = null;
+      let distance = map.distance([start.lat,start.lng],[end.lat,end.lng])/1000;
+      let earnings = Math.round(distance*plane.income);
+      money += earnings;
+      notify(`Plane ${planeIndex+1} arrived at ${destCode} and earned $${earnings}!`);
+      saveGame(); updateUI();
+    }
+  }, 50);
+}
+
+// --- Select Plane ---
+planesListEl.addEventListener('click', e=>{
+  if(e.target.classList.contains('plane-item')){
+    selectedPlaneIndex = Array.from(planesListEl.children).indexOf(e.target);
+    notify(`Selected Plane ${selectedPlaneIndex+1}. Click an airport to assign route.`);
+  }
+});
+
+// --- Assign Route manually ---
+airportsListEl.addEventListener('click', e=>{
+  if(selectedPlaneIndex !== null && e.target.classList.contains('airport-item')){
+    const code = e.target.getAttribute('data-code');
+    movePlane(selectedPlaneIndex, code);
+    selectedPlaneIndex = null;
+  }
+});
+
+// --- Passive income and Auto-Fly ---
+setInterval(()=>{
+  planes.forEach((plane,i)=>{
+    money += plane.income; // passive income
+    if(plane.autoFly){
+      const available = unlockedAirports.filter(a=>a!==plane.currentAirport);
+      if(available.length>0){
+        const dest = available[Math.floor(Math.random()*available.length)];
+        movePlane(i,dest);
+      }
+    }
+  });
+  saveGame(); updateUI();
+},5000);
 
 updateUI();
 </script>
