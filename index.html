@@ -8,7 +8,7 @@
 <style>
 body { margin:0; display:flex; font-family:sans-serif; height:100vh; }
 #panel { width:300px; background:#f0f0f0; padding:10px; overflow-y:auto; }
-#map { flex:1; height:100vh; min-width:0; width:100%; }
+#map { flex:1; height:100vh; min-width:0; }
 button { margin:5px 0; width:100%; padding:5px; cursor:pointer; }
 h2,h3 { margin:5px 0; }
 .airport-item, .plane-item { margin-bottom:3px; cursor:pointer; display:flex; justify-content:space-between; }
@@ -80,7 +80,6 @@ h2,h3 { margin:5px 0; }
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script>
-
 // --- Game Data ---
 let money = parseInt(localStorage.getItem('money')) || 25000;
 let unlockedAirports = JSON.parse(localStorage.getItem('unlockedAirports')) || ['JFK','LAX','LHR'];
@@ -99,9 +98,9 @@ const airports = {
   'DXB': {name:'Dubai Intl', lat:25.2532, lng:55.3657},
   'SIN': {name:'Singapore Changi', lat:1.3644, lng:103.9915},
   'SYD': {name:'Sydney Kingsford Smith', lat:-33.9399, lng:151.1753}
-  // ... add more airports as needed
 };
 
+// Plane levels
 const planeLevels = [
   {name:'Tiny Plane', income:50, upgradeCost:2000, speed:1},
   {name:'Regional Jet', income:200, upgradeCost:10000, speed:1.5},
@@ -114,7 +113,6 @@ const airportCost = 20000;
 // --- Map ---
 const map = L.map('map').setView([20,0],2);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors'}).addTo(map);
-
 const airportMarkers = {};
 for(const code in airports){
   const marker = L.marker([airports[code].lat, airports[code].lng])
@@ -143,6 +141,7 @@ function updateUI(){
   airportsListEl.innerHTML = '';
   unlockedAirports.forEach(code=>{
     const div = document.createElement('div');
+    div.setAttribute('data-code', code);
     div.textContent = `${airports[code].name} (${code})`;
     div.classList.add('airport-item');
     airportsListEl.appendChild(div);
@@ -152,15 +151,15 @@ function updateUI(){
   if(planes.length===0){ planesListEl.textContent = 'No planes yet'; }
   else {
     planes.forEach((plane,i)=>{
-      const level = plane.level || 0;
       const div = document.createElement('div');
       div.classList.add('plane-item');
-      div.textContent = `${plane.type || planeLevels[0].name} (Plane ${i+1}) ${plane.route?'- '+plane.route:''}`;
+      div.textContent = `${plane.type} (Plane ${i+1}) ${plane.route?'- '+plane.route:''}`;
       planesListEl.appendChild(div);
     });
   }
 }
 
+// --- Save Game ---
 function saveGame(){
   localStorage.setItem('money', money);
   localStorage.setItem('unlockedAirports', JSON.stringify(unlockedAirports));
@@ -218,8 +217,7 @@ planesListEl.addEventListener('click', e=>{
 // --- Assign Route ---
 airportsListEl.addEventListener('click', e=>{
   if(selectedPlaneIndex !== null && e.target.classList.contains('airport-item')){
-    const airportText = e.target.textContent;
-    const airportCode = airportText.match(/\((.*?)\)/)[1];
+    const airportCode = e.target.getAttribute('data-code');
     const plane = planes[selectedPlaneIndex];
     plane.route = airportCode;
     selectedPlaneIndex = null;
@@ -234,7 +232,11 @@ setInterval(()=>{
   saveGame(); updateUI();
 },5000);
 
-updateUI();
+// --- Fix Map Display ---
+window.onload = ()=>{
+  map.invalidateSize();
+  updateUI();
+};
 
 </script>
 </body>
