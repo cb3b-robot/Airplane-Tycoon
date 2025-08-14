@@ -4,21 +4,23 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Airplane Tycoon</title>
-<!-- Leaflet CSS -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <style>
     body, html { margin:0; padding:0; font-family: sans-serif; height: 100%; }
-    #map { width: 100%; height: 70%; }
-    #ui { padding: 10px; background: #f0f0f0; height: 30%; overflow-y: auto; }
+    #map { width: 100%; height: 65%; }
+    #ui { padding: 10px; background: #f0f0f0; height: 35%; overflow-y: auto; }
     .section { margin-bottom: 10px; }
     button { margin: 2px; }
     .notification { 
         position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
         background: rgba(0,0,0,0.7); color: white; padding: 5px 10px; border-radius: 5px;
-        display: none;
-        z-index: 1000;
+        display: none; z-index: 1000;
     }
-    .plane-icon { width: 32px; height: 32px; }
+    #tutorial {
+        position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+        background:white; padding:20px; border-radius:10px; box-shadow:0 0 10px black;
+        z-index:2000;
+    }
 </style>
 </head>
 <body>
@@ -28,14 +30,21 @@
     <div class="section">Money: $<span id="money">0</span></div>
     <div class="section" id="airportsList"></div>
     <div class="section" id="planesList"></div>
-    <div class="section"><button onclick="restartGame()">Restart Game</button></div>
+    <div class="section">
+        <button onclick="restartGame()">Restart Game</button>
+        <button onclick="unlockAirport()">Unlock Airport</button>
+    </div>
 </div>
 <div id="notification" class="notification"></div>
+<div id="tutorial">
+    <h3>Welcome to Airplane Tycoon!</h3>
+    <p>Start with 3 airports and a Tiny Plane. Buy planes, fly routes, earn money, and upgrade your planes. Keep your planes maintained for better passenger satisfaction!</p>
+    <button onclick="closeTutorial()">Got it!</button>
+</div>
 
-<!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script>
-// ====== GAME DATA ======
+// ===== GAME DATA =====
 const airportsData = [
     { code: 'JFK', name: 'John F. Kennedy Intl', lat: 40.6413, lon: -73.7781 },
     { code: 'LHR', name: 'London Heathrow', lat: 51.4700, lon: -0.4543 },
@@ -45,38 +54,71 @@ const airportsData = [
     { code: 'DXB', name: 'Dubai Intl', lat: 25.2532, lon: 55.3657 },
     { code: 'LAX', name: 'Los Angeles Intl', lat: 33.9416, lon: -118.4085 },
     { code: 'FRA', name: 'Frankfurt Intl', lat: 50.0379, lon: 8.5622 },
-    // Add more airports up to 30
+    { code: 'SIN', name: 'Singapore Changi', lat: 1.3644, lon: 103.9915 },
+    { code: 'ATL', name: 'Atlanta Intl', lat: 33.6407, lon: -84.4277 },
+    { code: 'ORD', name: 'Chicago O’Hare', lat: 41.9742, lon: -87.9073 },
+    { code: 'AMS', name: 'Amsterdam Schiphol', lat: 52.3105, lon: 4.7683 },
+    { code: 'PEK', name: 'Beijing Capital Intl', lat: 40.0799, lon: 116.6031 },
+    { code: 'MIA', name: 'Miami Intl', lat: 25.7959, lon: -80.2870 },
+    { code: 'BKK', name: 'Bangkok Suvarnabhumi', lat: 13.6900, lon: 100.7501 },
+    { code: 'DEL', name: 'Indira Gandhi Intl', lat: 28.5562, lon: 77.1000 },
+    { code: 'ICN', name: 'Incheon Intl', lat: 37.4602, lon: 126.4407 },
+    { code: 'MAD', name: 'Madrid-Barajas', lat: 40.4983, lon: -3.5676 },
+    { code: 'BCN', name: 'Barcelona-El Prat', lat: 41.2974, lon: 2.0833 },
+    { code: 'MUC', name: 'Munich Intl', lat: 48.3538, lon: 11.7861 },
+    { code: 'SFO', name: 'San Francisco Intl', lat: 37.6213, lon: -122.3790 },
+    { code: 'YYZ', name: 'Toronto Pearson Intl', lat: 43.6777, lon: -79.6248 },
+    { code: 'GRU', name: 'São Paulo Guarulhos', lat: -23.4356, lon: -46.4731 },
+    { code: 'EWR', name: 'Newark Liberty Intl', lat: 40.6895, lon: -74.1745 },
+    { code: 'JNB', name: 'O.R. Tambo Intl', lat: -26.1337, lon: 28.2420 },
+    { code: 'MEX', name: 'Mexico City Intl', lat: 19.4361, lon: -99.0719 },
+    { code: 'KUL', name: 'Kuala Lumpur Intl', lat: 2.7456, lon: 101.7090 },
+    { code: 'HKG', name: 'Hong Kong Intl', lat: 22.3080, lon: 113.9185 },
+    { code: 'CPT', name: 'Cape Town Intl', lat: -33.9696, lon: 18.5975 },
+    { code: 'MEL', name: 'Melbourne Airport', lat: -37.6690, lon: 144.8410 },
+    { code: 'OSL', name: 'Oslo Gardermoen', lat: 60.1939, lon: 11.1004 },
+    { code: 'HEL', name: 'Helsinki Vantaa', lat: 60.3172, lon: 24.9633 },
+    { code: 'DUB', name: 'Dublin Airport', lat: 53.4273, lon: -6.2436 },
+    { code: 'VIE', name: 'Vienna Intl', lat: 48.1103, lon: 16.5697 },
+    { code: 'CMB', name: 'Bandaranaike Intl', lat: 7.1800, lon: 79.8840 },
+    { code: 'ARN', name: 'Stockholm Arlanda', lat: 59.6519, lon: 17.9186 },
+    { code: 'SEA', name: 'Seattle-Tacoma Intl', lat: 47.4502, lon: -122.3088 },
+    { code: 'LGW', name: 'London Gatwick', lat: 51.1537, lon: -0.1821 },
+    { code: 'FCO', name: 'Rome Fiumicino', lat: 41.8003, lon: 12.2389 },
+    { code: 'MAN', name: 'Manchester Airport', lat: 53.3651, lon: -2.2728 },
+    { code: 'SVO', name: 'Moscow Sheremetyevo', lat: 55.9726, lon: 37.4146 },
+    { code: 'BOM', name: 'Chhatrapati Shivaji Intl', lat: 19.0896, lon: 72.8656 },
+    { code: 'IST', name: 'Istanbul Airport', lat: 41.2753, lon: 28.7519 },
+    { code: 'KIX', name: 'Kansai Intl', lat: 34.4273, lon: 135.2441 },
+    { code: 'NRT', name: 'Narita Intl', lat: 35.7720, lon: 140.3929 },
+    { code: 'CUN', name: 'Cancun Intl', lat: 21.0360, lon: -86.8770 },
+    { code: 'SCL', name: 'Santiago Intl', lat: -33.3929, lon: -70.7858 },
+    { code: 'BOS', name: 'Boston Logan Intl', lat: 42.3656, lon: -71.0096 },
+    { code: 'PHX', name: 'Phoenix Sky Harbor', lat: 33.4373, lon: -112.0078 }
 ];
+
 let gameData = {
     money: 100000,
     unlockedAirports: ['JFK','LHR','CDG'],
-    planes: [
-        { id:1, type:'Tiny Plane', location:'JFK', destination:null, status:'idle', earnings:0, rating:100 }
-    ],
+    planes: [{ id:1, type:'Tiny Plane', location:'JFK', destination:null, status:'idle', rating:100, maintenance:true }],
     planeIdCounter: 2
 };
 
-// Plane definitions
 const planeTypes = [
-    { name:'Tiny Plane', cost:50000, speed:0.5, capacity:50, earningsMultiplier:1 },
-    { name:'Regional Jet', cost:200000, speed:1, capacity:100, earningsMultiplier:2 },
-    { name:'Boeing 737', cost:500000, speed:1.5, capacity:200, earningsMultiplier:3 },
-    { name:'Boeing 747', cost:1000000, speed:2, capacity:400, earningsMultiplier:5 }
+    { name:'Tiny Plane', cost:50000, speed:0.5, capacity:50, earningsMultiplier:1, icon:'https://cdn-icons-png.flaticon.com/512/69/69407.png' },
+    { name:'Regional Jet', cost:200000, speed:1, capacity:100, earningsMultiplier:2, icon:'https://cdn-icons-png.flaticon.com/512/69/69406.png' },
+    { name:'Boeing 737', cost:500000, speed:1.5, capacity:200, earningsMultiplier:3, icon:'https://cdn-icons-png.flaticon.com/512/69/69405.png' },
+    { name:'Boeing 747', cost:1000000, speed:2, capacity:400, earningsMultiplier:5, icon:'https://cdn-icons-png.flaticon.com/512/69/69404.png' }
 ];
 
-// ====== MAP ======
+// ===== MAP =====
 const map = L.map('map').setView([20,0], 2);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 18
-}).addTo(map);
-
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:18 }).addTo(map);
 let airportMarkers = {};
 function updateAirports() {
-    for(let code in airportMarkers) {
-        map.removeLayer(airportMarkers[code]);
-    }
+    for(let code in airportMarkers) map.removeLayer(airportMarkers[code]);
     airportMarkers = {};
-    gameData.unlockedAirports.forEach(code => {
+    gameData.unlockedAirports.forEach(code=>{
         const airport = airportsData.find(a=>a.code===code);
         const marker = L.marker([airport.lat, airport.lon]).addTo(map)
             .bindPopup(`${airport.name} (${airport.code})`);
@@ -85,161 +127,91 @@ function updateAirports() {
 }
 updateAirports();
 
-// ====== UI ======
-function updateUI() {
+// ===== UI =====
+function updateUI(){
     document.getElementById('money').innerText = Math.floor(gameData.money);
-
-    // Airports
-    const airportsDiv = document.getElementById('airportsList');
-    airportsDiv.innerHTML = '<b>Airports:</b> ' + gameData.unlockedAirports.join(', ');
-
-    // Planes
+    document.getElementById('airportsList').innerHTML = '<b>Airports:</b> ' + gameData.unlockedAirports.join(', ');
     const planesDiv = document.getElementById('planesList');
     planesDiv.innerHTML = '<b>Planes:</b><br>';
     gameData.planes.forEach(plane=>{
-        planesDiv.innerHTML += `
-            ${plane.type} (Location: ${plane.location}) 
-            <button onclick="assignRoute(${plane.id})">Fly</button> 
-            <button onclick="autoFly(${plane.id})">Auto</button>
+        planesDiv.innerHTML += `${plane.type} (Loc: ${plane.location}, Rating: ${plane.rating}, Maint: ${plane.maintenance?"Yes":"No"}) 
+            <button onclick="assignRoute(${plane.id})" ${plane.maintenance?"":"disabled"}>Fly</button> 
+            <button onclick="autoFly(${plane.id})" ${plane.maintenance?"":"disabled"}>Auto</button>
             <button onclick="upgradePlane(${plane.id})">Upgrade</button>
-            <br>`;
+            <button onclick="maintainPlane(${plane.id})">Maintain ($${planeTypes.find(pt=>pt.name===plane.type).cost*0.1})</button><br>`;
     });
 }
 updateUI();
 
-// ====== NOTIFICATIONS ======
-function notify(msg, duration=2000){
-    const notif = document.getElementById('notification');
-    notif.innerText = msg;
-    notif.style.display='block';
-    setTimeout(()=>notif.style.display='none', duration);
-}
+// ===== Notifications =====
+function notify(msg,d=2000){ const n=document.getElementById('notification'); n.innerText=msg; n.style.display='block'; setTimeout(()=>n.style.display='none',d); }
 
-// ====== GAME FUNCTIONS ======
-function saveGame() {
-    localStorage.setItem('airplaneTycoonSave', JSON.stringify(gameData));
-}
-function loadGame() {
-    const saved = localStorage.getItem('airplaneTycoonSave');
-    if(saved) gameData = JSON.parse(saved);
-}
-function restartGame(){
-    if(confirm('Are you sure? Restart game will lose progress.')){
-        localStorage.removeItem('airplaneTycoonSave');
-        location.reload();
-    }
-}
+// ===== GAME FUNCTIONS =====
+function saveGame(){ localStorage.setItem('airplaneTycoonSave', JSON.stringify(gameData)); }
+function loadGame(){ const saved=localStorage.getItem('airplaneTycoonSave'); if(saved) gameData=JSON.parse(saved); }
+function restartGame(){ if(confirm('Restart?')) { localStorage.removeItem('airplaneTycoonSave'); location.reload(); } }
+function closeTutorial(){ document.getElementById('tutorial').style.display='none'; }
 
-// Upgrade plane
+// ===== Plane Functions =====
 function upgradePlane(id){
     const plane = gameData.planes.find(p=>p.id===id);
-    const currentIndex = planeTypes.findIndex(pt=>pt.name===plane.type);
-    if(currentIndex < planeTypes.length-1){
-        const nextPlane = planeTypes[currentIndex+1];
-        if(gameData.money >= nextPlane.cost){
-            gameData.money -= nextPlane.cost;
-            plane.type = nextPlane.name;
-            notify(`Upgraded to ${nextPlane.name}`);
-        }else{
-            notify('Not enough money');
-        }
-    }else{
-        notify('Plane is at max level');
-    }
+    const idx = planeTypes.findIndex(pt=>pt.name===plane.type);
+    if(idx<planeTypes.length-1){
+        const nextPlane = planeTypes[idx+1];
+        if(gameData.money>=nextPlane.cost){ gameData.money-=nextPlane.cost; plane.type=nextPlane.name; plane.maintenance=true; notify(`Upgraded to ${nextPlane.name}`); } 
+        else notify('Not enough money');
+    } else notify('Max plane');
+    updateUI();
+}
+function maintainPlane(id){
+    const plane = gameData.planes.find(p=>p.id===id);
+    const cost = planeTypes.find(pt=>pt.name===plane.type).cost*0.1;
+    if(gameData.money>=cost){ gameData.money-=cost; plane.maintenance=true; plane.rating=100; notify(`${plane.type} maintained!`); } 
+    else notify('Not enough money');
     updateUI();
 }
 
-// Assign flight route manually
-function assignRoute(id){
-    const plane = gameData.planes.find(p=>p.id===id);
-    const dest = prompt('Enter destination airport code:');
-    if(gameData.unlockedAirports.includes(dest) && dest!==plane.location){
-        plane.destination = dest;
-        plane.status = 'flying';
-        flyPlane(plane);
-        notify(`${plane.type} flying to ${dest}`);
-    }else{
-        notify('Invalid destination');
-    }
-}
-
-// Auto fly to random airport
-function autoFly(id){
-    const plane = gameData.planes.find(p=>p.id===id);
-    const possible = gameData.unlockedAirports.filter(a=>a!==plane.location);
-    if(possible.length>0){
-        plane.destination = possible[Math.floor(Math.random()*possible.length)];
-        plane.status = 'flying';
-        flyPlane(plane);
-        notify(`${plane.type} auto flying to ${plane.destination}`);
-    }
-}
-
-// Simulate flight
+// ===== Flight Functions =====
+function assignRoute(id){ const plane=gameData.planes.find(p=>p.id===id); const dest=prompt('Enter airport code:'); if(gameData.unlockedAirports.includes(dest)&&dest!==plane.location){ plane.destination=dest; plane.status='flying'; flyPlane(plane); notify(`${plane.type} flying to ${dest}`);} else notify('Invalid destination'); }
+function autoFly(id){ const plane=gameData.planes.find(p=>p.id===id); const possible=gameData.unlockedAirports.filter(a=>a!==plane.location); if(possible.length>0){ plane.destination=possible[Math.floor(Math.random()*possible.length)]; plane.status='flying'; flyPlane(plane); notify(`${plane.type} auto flying to ${plane.destination}`); }}
 function flyPlane(plane){
-    const startAirport = airportsData.find(a=>a.code===plane.location);
-    const endAirport = airportsData.find(a=>a.code===plane.destination);
-    if(!startAirport || !endAirport) return;
-
-    const planeIcon = L.icon({
-        iconUrl: 'https://cdn-icons-png.flaticon.com/512/69/69407.png',
-        iconSize: [32,32]
-    });
-    const marker = L.marker([startAirport.lat,startAirport.lon],{icon:planeIcon}).addTo(map);
-
-    const steps = 50;
-    let step = 0;
-    const latStep = (endAirport.lat - startAirport.lat)/steps;
-    const lonStep = (endAirport.lon - startAirport.lon)/steps;
-    const interval = setInterval(()=>{
+    const start=airportsData.find(a=>a.code===plane.location);
+    const end=airportsData.find(a=>a.code===plane.destination);
+    if(!start||!end) return;
+    const marker = L.marker([start.lat,start.lon],{icon:L.icon({iconUrl:planeTypes.find(pt=>pt.name===plane.type).icon,iconSize:[32,32]})}).addTo(map);
+    const steps=50, latStep=(end.lat-start.lat)/steps, lonStep=(end.lon-start.lon)/steps;
+    let step=0;
+    const interval=setInterval(()=>{
         step++;
-        marker.setLatLng([startAirport.lat + latStep*step, startAirport.lon + lonStep*step]);
+        marker.setLatLng([start.lat+latStep*step,start.lon+lonStep*step]);
         if(step>=steps){
-            clearInterval(interval);
-            map.removeLayer(marker);
-            plane.location = plane.destination;
-            plane.destination = null;
-            plane.status = 'idle';
-            const earnings = calculateEarnings(plane,startAirport,endAirport);
-            gameData.money += earnings;
-            plane.rating -= 1;
-            notify(`Flight completed! Earned $${Math.floor(earnings)}`);
-            updateUI();
-            saveGame();
+            clearInterval(interval); map.removeLayer(marker); plane.location=plane.destination; plane.destination=null; plane.status='idle'; plane.maintenance=false;
+            const earnings = calculateEarnings(plane,start,end); gameData.money+=earnings; plane.rating-=10; notify(`Flight complete! Earned $${Math.floor(earnings)}`);
+            updateUI(); saveGame();
         }
-    }, 1000/planeTypes.find(pt=>pt.name===plane.type).speed);
+    },1000/planeTypes.find(pt=>pt.name===plane.type).speed);
+}
+function calculateEarnings(plane,start,end){ const d=getDistance(start.lat,start.lon,end.lat,end.lon); const pt=planeTypes.find(pt=>pt.name===plane.type); return d*10*pt.earningsMultiplier*(plane.rating/100); }
+function getDistance(lat1,lon1,lat2,lon2){ const toRad=x=>x*Math.PI/180; const R=6371,dLat=toRad(lat2-lat1),dLon=toRad(lon2-lon1); const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2; return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)); }
+
+// ===== Unlock Airport with dynamic cost =====
+function unlockAirport(){
+    const startingAirports=['JFK','LHR','CDG'];
+    const available=airportsData.map(a=>a.code).filter(c=>!gameData.unlockedAirports.includes(c));
+    if(available.length===0){ notify('All airports unlocked'); return; }
+    const code=prompt('Enter airport code to unlock:\n'+available.join(','));
+    if(!available.includes(code)){ notify('Invalid airport code'); return; }
+    const extraAirports = gameData.unlockedAirports.length - startingAirports.length;
+    const cost = 50000 + Math.max(0,extraAirports)*10000;
+    if(gameData.money>=cost){ gameData.money-=cost; gameData.unlockedAirports.push(code); updateAirports(); updateUI(); saveGame(); notify(`Unlocked ${code} for $${cost}`); } 
+    else notify(`Not enough money! Airport costs $${cost}`);
 }
 
-// Earnings calculation
-function calculateEarnings(plane,start,end){
-    const distance = getDistance(start.lat,start.lon,end.lat,end.lon);
-    const planeData = planeTypes.find(pt=>pt.name===plane.type);
-    return distance * 10 * planeData.earningsMultiplier * plane.rating/100;
-}
+// ===== Passive Income =====
+setInterval(()=>{ gameData.money+=100; updateUI(); saveGame(); },5000);
 
-// Haversine distance
-function getDistance(lat1, lon1, lat2, lon2) {
-    function toRad(x){return x*Math.PI/180;}
-    const R = 6371;
-    const dLat = toRad(lat2-lat1);
-    const dLon = toRad(lon2-lon1);
-    const a = Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)*Math.sin(dLon/2);
-    const c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R*c;
-}
-
-// Passive income
-setInterval(()=>{
-    gameData.money += 100;
-    updateUI();
-    saveGame();
-}, 5000);
-
-// Auto load game
-loadGame();
-updateUI();
-updateAirports();
-
+// ===== Load Game =====
+loadGame(); updateUI(); updateAirports();
 </script>
 </body>
 </html>
