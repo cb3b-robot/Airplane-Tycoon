@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Airplane Tycoon — MVP</title>
+
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-sA+e2qJ0Y1s2gq8sT2u6qgJfQh5fQ1j+v9tW2f5d0+8=" crossorigin=""/>
+
+<style>
+  :root{
+    --panel-w: 320px;
+    --accent: #0b74de;
+    --bg: #0f1720;
+    --panel-bg: rgba(255,255,255,0.06);
+    color-scheme: dark;
+  }
+  html,body,#map { height:100%; margin:0; padding:0; font-family: Inter, system-ui, Arial, sans-serif; background:var(--bg); color:#e6eef8; }
+  #app {
+    display:flex; height:100vh; width:100vw; overflow:hidden;
+  }
+  /* Left panel */
+  #leftPanel {
+    width:var(--panel-w); min-width:240px; max-width:420px;
+    background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02));
+    padding:12px; box-sizing:border-box; display:flex; flex-direction:column; gap:8px;
+    border-right:1px solid rgba(255,255,255,0.03);
+  }
+  #header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  #logo { font-weight:700; letter-spacing:0.4px; }
+  .stat { font-size:14px; }
+  #airportsList { flex:1; overflow:auto; padding:6px; border-radius:8px; background:var(--panel-bg); }
+  .airportItem { padding:8px; border-radius:6px; margin-bottom:6px; cursor:pointer; display:flex; align-items:center; justify-content:space-between; }
+  .airportItem:hover { background:rgba(255,255,255,0.02); }
+  button { background:var(--accent); color:white; border:0; padding:8px 10px; border-radius:6px; cursor:pointer; }
+  .btn-ghost { background:transparent; border:1px solid rgba(255,255,255,0.06); color:#cfe6ff; }
+  #controls { display:flex; gap:8px; align-items:center; }
+  #rightTop { position:absolute; top:12px; right:12px; z-index:1000; display:flex; gap:8px; }
+  /* Active planes & actions */
+  #planes { margin-top:8px; padding:8px; background:var(--panel-bg); border-radius:8px; max-height:180px; overflow:auto; }
+  .planeItem { padding:6px; border-radius:6px; display:flex; justify-content:space-between; align-items:center; gap:6px; }
+  /* Map container */
+  #map { flex:1; position:relative; }
+  /* Simple tutorial bubble */
+  .tutorial {
+    position: absolute;
+    left: 16px;
+    bottom: 16px;
+    z-index: 2000;
+    background: rgba(8,12,20,0.9);
+    padding:12px; border-radius:8px; max-width:360px; box-shadow: 0 6px 20px rgba(0,0,0,0.6);
+  }
+  .tutorial h4 { margin:0 0 8px 0; font-size:15px; }
+  .muted { color:#b8c6dd; font-size:13px; }
+  /* Responsive */
+  @media (max-width:720px){
+    #leftPanel { width:100%; height:36vh; position:absolute; top:0; left:0; z-index:1500; transform:translateY(0); }
+    #map { margin-top:36vh; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="leftPanel" aria-label="Game control panel">
+    <div id="header">
+      <div>
+        <div id="logo">✈️ Airplane Tycoon</div>
+        <div class="muted" style="font-size:12px">MVP — world map, buy planes, earn money</div>
+      </div>
+      <div id="controls">
+        <div class="stat">Money: <strong id="money">$0</strong></div>
+        <button id="saveBtn" title="Save">Save</button>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:8px; margin-top:6px;">
+      <button id="buyBasic">Buy Basic Plane ($1000)</button>
+      <button id="toggleTutorial" class="btn-ghost">Tutorial</button>
+    </div>
+
+    <h3 style="margin:8px 0 4px 0">Airports</h3>
+    <div id="airportsList" role="list"></div>
+
+    <h3 style="margin:8px 0 4px 0">Active Planes</h3>
+    <div id="planes" aria-live="polite"></div>
+
+  </aside>
+
+  <div id="map" aria-label="World map"></div>
+</div>
+
+<!-- Tutorial bubble container -->
+<div id="tutorialContainer" style="pointer-events:none;"></div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-o9N1jz0gqQ6YkG1k4kq0Zk2s5gk7Q/6fGg9h6YbWm3k=" crossorigin=""></script>
+
+<script>
+(() => {
+  /* ---------- Sample real airports (MVP subset) ---------- */
+  const AIRPORTS = [
+    { id: 'KJFK', name: 'John F. Kennedy Intl (JFK)', lat: 40.6413, lon: -73.7781, country: 'USA', costToUnlock:0 },
+    { id: 'KLAX', name: 'Los Angeles Intl (LAX)', lat: 33.9416, lon:-118.4085, country: 'USA', costToUnlock:2000 },
+    { id: 'EGLL', name: 'London Heathrow (LHR)', lat:51.4700, lon:-0.4543, country:'UK', costToUnlock:3000 },
+    { id: 'OMDB', name: 'Dubai Intl (DXB)', lat:25.2532, lon:55.3657, country:'UAE', costToUnlock:5000 },
+    { id: 'YSSY', name: 'Sydney Kingsford Smith (SYD)', lat:-33.9399, lon:151.1753, country:'AUS', costToUnlock:7000 },
+    { id: 'RJTT', name: 'Tokyo Haneda (HND)', lat:35.5494, lon:139.7798, country:'JPN', costToUnlock:6000 }
+  ];
+
+  /* ---------- Game state & defaults ---------- */
+  const DEFAULT_STATE = {
+    money: 1500,
+    ownedPlanes: [],
+    unlockedAirports: ['KJFK', 'KLAX'], // starting set
+    baseAirport: null,
+    tutorialDismissed: false
+  };
+
+  const STORAGE_KEY = 'airplane_tycoon_v1';
+
+  // load/save
+  function loadState(){
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return {...DEFAULT_STATE};
+      const parsed = JSON.parse(raw);
+      return {...DEFAULT_STATE, ...parsed};
+    } catch(e){
+      console.warn('loadState failed:', e);
+      return {...DEFAULT_STATE};
+    }
+  }
+  function saveState(){
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  const state = loadState();
+
+  /* ---------- UI references ---------- */
+  const $money = document.getElementById('money');
+  const $airportsList = document.getElementById('airportsList');
+  const $planes = document.getElementById('planes');
+  const $buyBasic = document.getElementById('buyBasic');
+  const $saveBtn = document.getElementById('saveBtn');
+  const $tutorialContainer = document.getElementById('tutorialContainer');
+  const $toggleTutorial = document.getElementById('toggleTutorial');
+
+  function formatMoney(n){ return '$' + n.toLocaleString(); }
+
+  /* ---------- Map init (Leaflet) ---------- */
+  const map = L.map('map', { minZoom: 2, maxZoom: 6 }).setView([20,0], 2);
+
+  // OpenStreetMap tiles (policy: suitable for public use). If offline or blocked, map will still show a blank canvas.
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 19
+  }).addTo(map);
+
+  // markers layer
+  const airportLayer = L.layerGroup().addTo(map);
+
+  /* ---------- Render functions ---------- */
+  function renderMoney(){
+    $money.textContent = formatMoney(state.money);
+  }
+
+  function renderAirports(){
+    $airportsList.innerHTML = '';
+    // show airports sorted: unlocked first, then locked
+    const unlockedSet = new Set(state.unlockedAirports);
+    const sorted = [...AIRPORTS].sort((a,b) => (unlockedSet.has(b.id) - unlockedSet.has(a.id)) || a.name.localeCompare(b.name));
+    sorted.forEach(ap => {
+      const li = document.createElement('div');
+      li.className = 'airportItem';
+      const left = document.createElement('div');
+      left.innerHTML = `<strong>${ap.name}</strong><div class="muted" style="font-size:12px">${ap.country} • ${ap.id}</div>`;
+      const right = document.createElement('div');
+      if(unlockedSet.has(ap.id)){
+        const btn = document.createElement('button');
+        btn.textContent = (state.baseAirport===ap.id) ? 'Base' : 'Select';
+        btn.onclick = () => { state.baseAirport = ap.id; renderAll(); saveState(); map.flyTo([ap.lat, ap.lon], 4); };
+        right.appendChild(btn);
+      } else {
+        const btn = document.createElement('button');
+        btn.textContent = `Unlock ${formatMoney(ap.costToUnlock)}`;
+        btn.onclick = () => {
+          if(state.money >= ap.costToUnlock){
+            state.money -= ap.costToUnlock;
+            state.unlockedAirports.push(ap.id);
+            saveState();
+            renderAll();
+          } else {
+            alert('Not enough money to unlock this airport.');
+          }
+        };
+        right.appendChild(btn);
+      }
+      li.appendChild(left);
+      li.appendChild(right);
+      $airportsList.appendChild(li);
+    });
+    // update map markers
+    airportLayer.clearLayers();
+    AIRPORTS.forEach(ap => {
+      const marker = L.circleMarker([ap.lat, ap.lon], {
+        radius: state.unlockedAirports.includes(ap.id) ? 8 : 5,
+        color: state.baseAirport===ap.id ? '#ffd166' : '#0b74de',
+        weight: state.baseAirport===ap.id ? 3 : 1,
+        fillOpacity: state.unlockedAirports.includes(ap.id) ? 0.9 : 0.3
+      }).bindTooltip(`${ap.name} (${ap.id})`);
+      marker.addTo(airportLayer);
+    });
+  }
+
+  function renderPlanes(){
+    $planes.innerHTML = '';
+    if(state.ownedPlanes.length === 0){
+      $planes.textContent = 'No active planes. Buy one to start flying!';
+      return;
+    }
+    state.ownedPlanes.forEach((p, idx) => {
+      const div = document.createElement('div');
+      div.className = 'planeItem';
+      div.innerHTML = `<div><strong>${p.name}</strong><div class="muted" style="font-size:12px">Route: ${p.route ? p.route.join(' → ') : 'Not assigned'}</div></div>`;
+      const right = document.createElement('div');
+      const btn = document.createElement('button');
+      btn.textContent = 'Collect $' + p.earning;
+      btn.onclick = () => {
+        state.money += p.earning;
+        renderAll();
+        saveState();
+      };
+      right.appendChild(btn);
+      div.appendChild(right);
+      $planes.appendChild(div);
+    });
+  }
+
+  function renderAll(){
+    renderMoney();
+    renderAirports();
+    renderPlanes();
+  }
+
+  /* ---------- Simple economy: buying a basic plane ---------- */
+  $buyBasic.addEventListener('click', () => {
+    const cost = 1000;
+    if(state.money < cost){
+      alert('Not enough money to buy a basic plane.');
+      return;
+    }
+    state.money -= cost;
+    const plane = {
+      id: 'plane_' + Date.now(),
+      name: 'Basic Plane',
+      earning: 200, // clicking collects this
+      route: null
+    };
+    state.ownedPlanes.push(plane);
+    saveState();
+    renderAll();
+  });
+
+  $saveBtn.addEventListener('click', () => {
+    saveState();
+    $saveBtn.textContent = 'Saved';
+    setTimeout(()=> $saveBtn.textContent = 'Save', 1000);
+  });
+
+  /* ---------- Tutorial popups (anchored, dismissible) ---------- */
+  const TUTORIAL_STEPS = [
+    { id: 't1', title:'Welcome to Airplane Tycoon', text:'Pick a starting airport from the left panel. Your money and actions are shown there.' },
+    { id: 't2', title:'Buy a Plane', text:'Click "Buy Basic Plane" to start earning. Then click the plane\'s "Collect" button to collect income.' },
+    { id: 't3', title:'Map', text:'The world map is interactive — pan and zoom to see airports around the globe.' }
+  ];
+
+  function showTutorial(force=false){
+    if(state.tutorialDismissed && !force) return;
+    // sequential
+    let idx = 0;
+    const container = document.createElement('div');
+    container.className = 'tutorial';
+    container.style.pointerEvents = 'auto';
+    function showStep(i){
+      const step = TUTORIAL_STEPS[i];
+      container.innerHTML = `<h4>${step.title}</h4><div class="muted">${step.text}</div><div style="margin-top:8px; display:flex; gap:8px; justify-content:flex-end;"><button id="gotIt">Got it</button><button id="skip" class="btn-ghost">Skip</button></div>`;
+      container.querySelector('#gotIt').onclick = () => {
+        i++;
+        if(i < TUTORIAL_STEPS.length) showStep(i);
+        else { state.tutorialDismissed = true; saveState(); container.remove(); }
+      };
+      container.querySelector('#skip').onclick = () => { state.tutorialDismissed = true; saveState(); container.remove(); };
+    }
+    showStep(idx);
+    $tutorialContainer.appendChild(container);
+  }
+  $toggleTutorial.addEventListener('click', ()=> showTutorial(true));
+
+  /* ---------- Passive income loop (small auto-income over time) ---------- */
+  // For MVP: every 30s, each owned plane generates a small income automatically.
+  function incomeTick(){
+    const incomePerPlane = 50;
+    const count = state.ownedPlanes.length;
+    if(count > 0){
+      state.money += incomePerPlane * count;
+      saveState();
+      renderMoney();
+    }
+  }
+  setInterval(incomeTick, 30000); // 30s
+
+  /* ---------- First-run set up ---------- */
+  function firstRunSetup(){
+    if(!state.baseAirport && state.unlockedAirports.length>0){
+      state.baseAirport = state.unlockedAirports[0];
+    }
+  }
+
+  firstRunSetup();
+  renderAll();
+  showTutorial();
+
+  // center the map on base airport if set
+  if(state.baseAirport){
+    const base = AIRPORTS.find(a=>a.id===state.baseAirport);
+    if(base) map.setView([base.lat, base.lon], 4);
+  }
+
+  // small help: center map on selected airport when clicked on list (already handled in renderAirports)
+  // expose save on unload
+  window.addEventListener('beforeunload', () => saveState());
+
+  // For debugging in console
+  window._AT = { state, saveState, loadState };
+
+})();
+</script>
+</body>
+</html>
