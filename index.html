@@ -82,6 +82,7 @@ h2,h3 { margin:5px 0; }
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script>
+
 // --- Game Data ---
 let money = parseInt(localStorage.getItem('money')) || 25000;
 let unlockedAirports = JSON.parse(localStorage.getItem('unlockedAirports')) || ['JFK','LAX','LHR'];
@@ -132,7 +133,6 @@ const airportCost = 20000;
 // --- Map ---
 const map = L.map('map').setView([20,0],2);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors'}).addTo(map);
-
 const airportMarkers = {};
 for(const code in airports){
   const marker = L.marker([airports[code].lat, airports[code].lng])
@@ -147,7 +147,6 @@ const moneyEl = document.getElementById('money');
 const airportsListEl = document.getElementById('airports-list');
 const planesListEl = document.getElementById('planes-list');
 const tutorialDiv = document.getElementById('tutorial');
-
 let planeRoutes = [];
 let planeMarkers = [];
 let selectedPlaneIndex = null;
@@ -163,7 +162,6 @@ function notify(msg,duration=3000){
 // --- Update UI ---
 function updateUI(){
   moneyEl.textContent = money;
-
   airportsListEl.innerHTML = '';
   unlockedAirports.forEach(code=>{
     const div = document.createElement('div');
@@ -171,24 +169,21 @@ function updateUI(){
     div.classList.add('airport-item');
     airportsListEl.appendChild(div);
   });
-
   planesListEl.innerHTML = '';
-  if(planes.length===0){
-    planesListEl.textContent = 'No planes yet';
-  } else {
+  if(planes.length===0){ planesListEl.textContent = 'No planes yet'; }
+  else {
     planes.forEach((plane,i)=>{
       const level = plane.level || 0;
       const repairCost = 500*(level+1);
+      const ratingStars = '★'.repeat(plane.rating||5)+'☆'.repeat(5-(plane.rating||5));
       const div = document.createElement('div');
       div.classList.add('plane-item');
-      const ratingStars = '★'.repeat(plane.rating||5)+'☆'.repeat(5-(plane.rating||5));
       div.innerHTML = `<span>${plane.type || planeLevels[0].name} (Plane ${i+1}) ${plane.route?'- '+plane.route:''} ${plane.needsMaintenance?'[Needs Maintenance]':''} [${ratingStars}]</span>
       ${planeLevels[level+1]?'<button onclick="upgradePlane('+i+')">Upgrade $'+planeLevels[level+1].upgradeCost+'</button>':''}
       ${plane.needsMaintenance?'<button onclick="repairPlane('+i+')">Repair $'+repairCost+'</button>':''}`;
       planesListEl.appendChild(div);
     });
   }
-
   updateRoutes();
 }
 
@@ -299,7 +294,6 @@ airportsListEl.addEventListener('click',e=>{
       updateUI();
       notify(`Plane assigned to ${airportCode}`);
     } else notify("Airport locked!");
-  }
 });
 
 // --- Passive Income ---
@@ -323,8 +317,6 @@ function updateRoutes(){
       const planeIcon = L.icon({iconUrl:'https://cdn-icons-png.flaticon.com/512/69/69524.png',iconSize:[25,25]});
       const marker = L.marker([airports[startCode].lat,airports[startCode].lng],{icon:planeIcon}).addTo(map);
       planeMarkers.push(marker);
-
-      // Animate
       let progress=0, steps=100/plane.speed;
       const latStep = (airports[endCode].lat - airports[startCode].lat)/steps;
       const lngStep = (airports[endCode].lng - airports[startCode].lng)/steps;
@@ -335,9 +327,6 @@ function updateRoutes(){
           plane.currentAirport=endCode;
           plane.maintenance -= 1;
           if(plane.maintenance <=0) plane.needsMaintenance = true;
-          // Adjust rating
-          if(plane.needsMaintenance) plane.rating = Math.max(1,(plane.rating||5)-1);
-          // Reset income multiplier
           plane.incomeMultiplier = 1;
           saveGame();
         } else {
@@ -363,12 +352,8 @@ function randomEvent(){
 }
 setInterval(randomEvent,60000);
 
-// --- Missions ---
-let activeMission = null;
-function generateMission(){
-  const airportKeys = Object.keys(airports);
-  const start = airportKeys[Math.floor(Math.random()*airportKeys.length)];
-  const end = airportKeys[Math.floor(Math.random()*airportKeys.length)];
-  if(start===end) return generateMission();
-  activeMission = {start,end,reward:5000,completed:false};
-  notify(`Mission: Fly ${start} → ${end
+updateUI();
+
+</script>
+</body>
+</html>
