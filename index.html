@@ -72,7 +72,9 @@ h2,h3 { margin:5px 0; }
   4. Planes generate passive income, collect manually too.<br>
   5. Upgrade planes to make them stronger.<br>
   6. Planes need maintenance after each route!<br>
-  7. Unlock more airports to expand your airline!</p>
+  7. Unlock more airports to expand your airline!<br>
+  8. Missions give bonus money, complete them to earn extra.<br>
+  9. Random events and passenger ratings affect your income!</p>
   <button id="gotit-btn">Got it</button>
 </div>
 
@@ -118,12 +120,11 @@ const airports = {
   'SYR': {name:'Syracuse Hancock Intl', lat:43.1112, lng:-76.1063}
 };
 
-// --- Plane Upgrade Levels ---
 const planeLevels = [
   {name:'Tiny Plane', income:50, upgradeCost:2000, speed:1},
   {name:'Regional Jet', income:200, upgradeCost:10000, speed:1.5},
   {name:'Boeing 737', income:1000, upgradeCost:50000, speed:2},
-  {name:'Boeing 747', income:5000, upgradeCost:null, speed:3} // max level
+  {name:'Boeing 747', income:5000, upgradeCost:null, speed:3}
 ];
 
 const airportCost = 20000;
@@ -180,7 +181,8 @@ function updateUI(){
       const repairCost = 500*(level+1);
       const div = document.createElement('div');
       div.classList.add('plane-item');
-      div.innerHTML = `<span>${plane.type || planeLevels[0].name} (Plane ${i+1}) ${plane.route?'- '+plane.route:''} ${plane.needsMaintenance?'[Needs Maintenance]':''}</span>
+      const ratingStars = '★'.repeat(plane.rating||5)+'☆'.repeat(5-(plane.rating||5));
+      div.innerHTML = `<span>${plane.type || planeLevels[0].name} (Plane ${i+1}) ${plane.route?'- '+plane.route:''} ${plane.needsMaintenance?'[Needs Maintenance]':''} [${ratingStars}]</span>
       ${planeLevels[level+1]?'<button onclick="upgradePlane('+i+')">Upgrade $'+planeLevels[level+1].upgradeCost+'</button>':''}
       ${plane.needsMaintenance?'<button onclick="repairPlane('+i+')">Repair $'+repairCost+'</button>':''}`;
       planesListEl.appendChild(div);
@@ -201,7 +203,7 @@ function saveGame(){
 document.getElementById('buy-plane-btn').onclick = ()=>{
   if(money>=planeLevels[0].upgradeCost){
     money -= planeLevels[0].upgradeCost;
-    planes.push({ type: planeLevels[0].name, income: planeLevels[0].income, speed: planeLevels[0].speed, level:0, route:null, currentAirport:unlockedAirports[0], maintenance:3, needsMaintenance:false });
+    planes.push({ type: planeLevels[0].name, income: planeLevels[0].income, speed: planeLevels[0].speed, level:0, route:null, currentAirport:unlockedAirports[0], maintenance:3, needsMaintenance:false, rating:5, incomeMultiplier:1 });
     saveGame();
     updateUI();
     notify("Tiny Plane purchased!");
@@ -302,7 +304,7 @@ airportsListEl.addEventListener('click',e=>{
 
 // --- Passive Income ---
 setInterval(()=>{
-  planes.forEach(p=>money+=p.income);
+  planes.forEach(p=>money+=p.income*p.incomeMultiplier);
   saveGame();
   updateUI();
 },5000);
@@ -333,6 +335,10 @@ function updateRoutes(){
           plane.currentAirport=endCode;
           plane.maintenance -= 1;
           if(plane.maintenance <=0) plane.needsMaintenance = true;
+          // Adjust rating
+          if(plane.needsMaintenance) plane.rating = Math.max(1,(plane.rating||5)-1);
+          // Reset income multiplier
+          plane.incomeMultiplier = 1;
           saveGame();
         } else {
           marker.setLatLng([airports[startCode].lat+latStep*progress,airports[startCode].lng+lngStep*progress]);
@@ -343,9 +349,26 @@ function updateRoutes(){
   });
 }
 
-// --- Initialize ---
-window.addEventListener('load',()=>{ map.invalidateSize(); });
-updateUI();
-</script>
-</body>
-</html>
+// --- Random Events ---
+function randomEvent(){
+  const events = [
+    {msg:'Storm at LAX! Flights delayed.', effect:()=>{ planes.forEach(p=>{ if(p.route==='LAX') p.route=null; }); }},
+    {msg:'Fuel prices spike! Repair costs doubled for next 3 flights.', effect:()=>{ planes.forEach(p=>p.fuelSurge=true); }},
+    {msg:'Airport strike at JFK! Plane cannot depart this airport this round.', effect:()=>{ planes.forEach(p=>{ if(p.currentAirport==='JFK') p.route=null; }); }},
+    {msg:'Good press! Passenger demand increases, income +50% for 1 round.', effect:()=>{ planes.forEach(p=>p.incomeMultiplier=1.5); }},
+  ];
+  const e = events[Math.floor(Math.random()*events.length)];
+  e.effect();
+  notify('Event: '+e.msg,5000);
+}
+setInterval(randomEvent,60000);
+
+// --- Missions ---
+let activeMission = null;
+function generateMission(){
+  const airportKeys = Object.keys(airports);
+  const start = airportKeys[Math.floor(Math.random()*airportKeys.length)];
+  const end = airportKeys[Math.floor(Math.random()*airportKeys.length)];
+  if(start===end) return generateMission();
+  activeMission = {start,end,reward:5000,completed:false};
+  notify(`Mission: Fly ${start} → ${end
