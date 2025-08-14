@@ -52,7 +52,7 @@ const airportData = [
   { name: "Paris Charles de Gaulle", code:"CDG", lat:49.0097, lon:2.5479 },
   { name: "Dubai Intl", code:"DXB", lat:25.2532, lon:55.3657 },
   { name: "Sydney Kingsford Smith", code:"SYD", lat:-33.9399, lon:151.1753 },
-  // Add up to 50 airports
+  // Add up to 50 airports as needed
 ];
 
 // Plane types
@@ -81,7 +81,6 @@ function notify(msg){
 // --- Airports ---
 function initAirports(){
   if(game.airports.length===0){
-    // unlock first 3
     for(let i=0;i<3;i++){
       game.airports.push({ ...airportData[i], level:"Small", unlocked:true });
     }
@@ -141,7 +140,6 @@ function updateAirportsUI(){
     btn.onclick=()=>upgradeAirport(i);
     container.appendChild(btn);
   });
-  // show unlockable airports
   for(let i=3;i<airportData.length;i++){
     if(!game.airports.find(a=>a.code===airportData[i].code)){
       const btn = document.createElement("button");
@@ -221,40 +219,30 @@ function renderPlanes(){
   });
 }
 
-// --- Game Loop ---
-function gameTick(){
-  // Passive income from airports
-  game.airports.forEach(ap=>{
-    if(ap.unlocked){
-      let income = ap.level==="Small"?500:ap.level==="Medium"?2000:5000;
-      game.money+=income;
-    }
-  });
-
-  // Plane auto-fly & maintenance
-  game.planes.forEach(pl=>{
-    if(pl.autoFly && pl.status==="idle"){
-      const availableAirports = game.airports.filter(a=>a.code!==pl.location);
-      if(availableAirports.length>0){
-        const dest = availableAirports[Math.floor(Math.random()*availableAirports.length)];
-        startFlight(pl,dest.code);
-      }
-    }
-  });
-
-  updateMoney();
-  updatePlanesUI();
-  updateProfitChart();
-  saveGame();
+// --- Plane Queue System ---
+function assignFlight(pl, destCode){
+  pl.queue.push(destCode);
+  if(pl.status==="idle") executeNextFlight(pl);
 }
 
-function startFlight(pl,destCode){
-  pl.destination=destCode;
-  pl.status="flying";
+function executeNextFlight(pl){
+  if(pl.queue.length===0) return;
+  const nextDest = pl.queue.shift();
+  startFlight(pl,nextDest);
+}
+
+// --- Flight ---
+function startFlight(pl, destCode){
+  pl.destination = destCode;
+  pl.status = "flying";
+
   const from = game.airports.find(a=>a.code===pl.location);
   const to = game.airports.find(a=>a.code===destCode);
   const distance = getDistance(from.lat,from.lon,to.lat,to.lon);
-  const duration = 3000 / planeTypes[pl.typeIndex].speed; // simplified
+  const duration = distance * 10 / planeTypes[pl.typeIndex].speed; // distance-based time
+
+  // Draw line
+  const line = L.polyline([[from.lat,from.lon],[to.lat,to.lon]], { color: pl.autoFly?'green':'blue', weight:3 }).addTo(map);
 
   const marker = planeMarkers[game.planes.indexOf(pl)];
   if(marker) marker.setLatLng([from.lat,from.lon]);
@@ -270,16 +258,18 @@ function startFlight(pl,destCode){
       clearInterval(flightInterval);
       pl.location=destCode;
       pl.status="idle";
+      line.remove();
       pl.rating -= Math.random()*5;
-      game.money += planeTypes[pl.typeIndex].earn*(getAirportMultiplier(to.level));
-      notify(`${pl.name} arrived at ${to.name}, earned $${planeTypes[pl.typeIndex].earn*(getAirportMultiplier(to.level))}`);
-      if(game.autoMaintain && pl.status==="idle" && game.money>=1000){
-        game.money-=1000; pl.status="idle"; notify(`${pl.name} auto-maintained`);
+      game.money += planeTypes[pl.typeIndex].earn * getAirportMultiplier(to.level);
+      notify(`${pl.name} arrived at ${to.name}, earned $${planeTypes[pl.typeIndex].earn * getAirportMultiplier(to.level)}`);
+      if(game.autoMaintain && game.money>=1000){
+        game.money -= 1000; notify(`${pl.name} auto-maintained`);
       }
       renderPlanes();
       updatePlanesUI();
+      executeNextFlight(pl); // Next in queue
     }
-  },step);
+  }, step);
 }
 
 function getAirportMultiplier(level){ return level==="Small"?1:level==="Medium"?2:3; }
@@ -291,6 +281,33 @@ function getDistance(lat1,lon1,lat2,lon2){
   const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
   const c = 2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
   return R*c;
+}
+
+// --- Game Loop ---
+function gameTick(){
+  // Passive income from airports
+  game.airports.forEach(ap=>{
+    if(ap.unlocked){
+      let income = ap.level==="Small"?500:ap.level==="Medium"?2000:5000;
+      game.money+=income;
+    }
+  });
+
+  // Auto-fly planes
+  game.planes.forEach(pl=>{
+    if(pl.autoFly && pl.status==="idle"){
+      const availableAirports = game.airports.filter(a=>a.code!==pl.location);
+      if(availableAirports.length>0){
+        const dest = availableAirports[Math.floor(Math.random()*availableAirports.length)];
+        assignFlight(pl,dest.code);
+      }
+    }
+  });
+
+  updateMoney();
+  updatePlanesUI();
+  updateProfitChart();
+  saveGame();
 }
 
 // --- Money ---
