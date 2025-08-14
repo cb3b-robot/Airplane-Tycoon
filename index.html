@@ -14,8 +14,6 @@ body, html { margin:0; padding:0; font-family:sans-serif; height:100%; }
 button { margin:2px; }
 .notification { position:absolute; top:10px; left:50%; transform:translateX(-50%);
   background:rgba(0,0,0,0.7); color:white; padding:5px 10px; border-radius:5px; display:none; z-index:1000; }
-#tutorial { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-  background:white; padding:20px; border-radius:10px; box-shadow:0 0 10px black; z-index:2000; }
 .plane-emoji { font-size:24px; text-align:center; }
 </style>
 </head>
@@ -37,24 +35,19 @@ button { margin:2px; }
   </div>
 </div>
 <div id="notification" class="notification"></div>
-<div id="tutorial">
-  <h3>Welcome to Airplane Tycoon!</h3>
-  <p>Start with 3 airports and a Tiny Plane. Buy planes, fly routes, earn money, upgrade your planes, and keep them maintained!</p>
-  <button onclick="closeTutorial()">Got it!</button>
-</div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script>
 // ================== GAME DATA ==================
 let autoMaintainEnabled=false;
 let moneyHistory=[];
-let achievements={firstMillion:false,allAirports:false,allPlanes:false};
-
 const airportsData=[
   {code:'JFK',name:'John F. Kennedy',lat:40.6413,lon:-73.7781},
   {code:'LHR',name:'London Heathrow',lat:51.4700,lon:-0.4543},
   {code:'CDG',name:'Charles de Gaulle',lat:49.0097,lon:2.5479},
-  // ... add more up to 50 airports
+  {code:'HND',name:'Tokyo Haneda',lat:35.5494,lon:139.7798},
+  {code:'SYD',name:'Sydney',lat:-33.9399,lon:151.1753}
+  // ... add more up to 50
 ];
 
 let gameData={
@@ -64,8 +57,6 @@ let gameData={
   planes:[{id:1,name:'Plane 1',type:'Tiny Plane',location:'JFK',destination:null,status:'idle',rating:100,maintenance:true,autoFlying:false,queue:[]}],
   planeIdCounter:2
 };
-
-// Initialize airport levels
 gameData.airports=gameData.unlockedAirports.map(code=>({code:code,level:'Small'}));
 
 const planeTypes=[
@@ -106,7 +97,7 @@ function updateUI(){
   const planesDiv=document.getElementById('planesList'); planesDiv.innerHTML='<b>Planes:</b><br>';
   gameData.planes.forEach(p=>{
       const idx=planeTypes.findIndex(pt=>pt.name===p.type);
-      const next=planeTypes[idx+1];
+      const next=idx<planeTypes.length-1?planeTypes[idx+1]:null;
       const upgradeText=next?`Upgrade to ${next.name} ($${next.cost})`:'Max plane';
       const maintainCost=Math.floor(planeTypes.find(pt=>pt.name===p.type).cost*0.1);
       const autoColor=p.autoFlying?'green':'red';
@@ -129,7 +120,6 @@ function notify(msg,d=2000){ const n=document.getElementById('notification'); n.
 function saveGame(){ localStorage.setItem('airplaneTycoonSave', JSON.stringify(gameData)); }
 function loadGame(){ const s=localStorage.getItem('airplaneTycoonSave'); if(s) gameData=JSON.parse(s); }
 function restartGame(){ if(confirm('Restart?')){ localStorage.removeItem('airplaneTycoonSave'); location.reload(); } }
-function closeTutorial(){ document.getElementById('tutorial').style.display='none'; }
 function toggleAutoMaintain(){ autoMaintainEnabled=!autoMaintainEnabled; document.getElementById('autoMaintainBtn').style.background=autoMaintainEnabled?'green':'red'; document.getElementById('autoMaintainBtn').innerText=`Auto-Maintain: ${autoMaintainEnabled?'ON':'OFF'}`; }
 function renamePlane(id,name){ const p=gameData.planes.find(p=>p.id===id); if(p)p.name=name; saveGame(); updateUI(); }
 
@@ -160,7 +150,7 @@ function flyPlane(p){
     if(step>=steps){ clearInterval(interval); map.removeLayer(marker); map.removeLayer(path); p.location=p.destination; p.destination=null; p.status='idle'; p.maintenance=false;
       const earnings=Math.floor(calculateEarnings(p,start,end)); gameData.money+=earnings;
       p.rating-=Math.floor(Math.random()*10); flightEvent(p); if(autoMaintainEnabled && !p.maintenance){ const cost=planeTypes.find(pt=>pt.name===p.type).cost*0.1; if(gameData.money>=cost){ gameData.money-=cost; p.maintenance=true; p.rating=100; notify(`${p.name} auto-maintained for $${Math.floor(cost)}`); } }
-      notify(`Flight complete! Earned $${earnings}`); moneyHistory.push(gameData.money); updateUI(); saveGame(); updateProfitChart(); if(p.autoFlying && p.status==='idle') autoFly(p); if(p.queue.length>0 && p.status==='idle') nextFlight(p); checkAchievements();
+      notify(`Flight complete! Earned $${earnings}`); moneyHistory.push(gameData.money); updateUI(); saveGame(); updateProfitChart(); if(p.autoFlying && p.status==='idle') autoFly(p); if(p.queue.length>0 && p.status==='idle') nextFlight(p); 
     }
   },1000/planeTypes.find(pt=>pt.name===p.type).speed);
 }
@@ -180,8 +170,6 @@ function calculateEarnings(p,start,end){
 function getDistance(lat1,lon1,lat2,lon2){ const R=6371; const dLat=(lat2-lat1)*Math.PI/180; const dLon=(lon2-lon1)*Math.PI/180; const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2; const c=2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)); return R*c; }
 
 function flightEvent(plane){ const r=Math.random(); if(r<0.1){ plane.rating-=5; notify('Passengers unhappy due to turbulence!'); } else if(r<0.2){ gameData.money+=500; notify('Good weather! Extra $500 earned'); } }
-
-function checkAchievements(){ if(gameData.money>=1000000&&!achievements.firstMillion){ achievements.firstMillion=true; notify('Achievement unlocked: First $1M!'); } }
 
 function upgradeAirport(code){
     const airport=gameData.airports.find(a=>a.code===code);
@@ -206,7 +194,7 @@ function passiveIncomeTick(){
   moneyHistory.push(gameData.money);
   updateUI(); updateProfitChart(); saveGame();
 }
-setInterval(passiveIncomeTick,5000); // every 5 seconds
+setInterval(passiveIncomeTick,5000);
 
 // Profit Chart
 const ctx=document.getElementById('profitChart').getContext('2d');
