@@ -197,7 +197,7 @@ function saveGame(){
 document.getElementById('buy-plane-btn').onclick = ()=>{
   if(money>=1000){
     money -= 1000;
-    const plane = {type:'Tiny Plane', level:0, income:50, speed:1, route:null, currentAirport:unlockedAirports[0], autoFly:false};
+    const plane = {type:'Tiny Plane', level:0, income:50, speed:1, route:null, currentAirport:unlockedAirports[0], autoFly:false, flying:false};
     planes.push(plane);
     const marker = L.marker([airports[plane.currentAirport].lat, airports[plane.currentAirport].lng], {icon: planeIcon}).addTo(map);
     planeMarkers.push(marker);
@@ -259,6 +259,9 @@ function upgradePlane(i){
 // --- Plane movement ---
 function movePlane(planeIndex, destCode){
   const plane = planes[planeIndex];
+  if(plane.flying) return; // prevent overlapping flights
+  plane.flying = true;
+
   const marker = planeMarkers[planeIndex];
   const start = airports[plane.currentAirport];
   const end = airports[destCode];
@@ -277,6 +280,7 @@ function movePlane(planeIndex, destCode){
       clearInterval(interval);
       plane.currentAirport = destCode;
       plane.route = null;
+      plane.flying = false;
       let distance = map.distance([start.lat,start.lng],[end.lat,end.lng])/1000;
       let earnings = Math.round(distance*plane.income);
       money += earnings;
@@ -307,7 +311,7 @@ airportsListEl.addEventListener('click', e=>{
 setInterval(()=>{
   planes.forEach((plane,i)=>{
     money += plane.income; // passive income
-    if(plane.autoFly){
+    if(plane.autoFly && !plane.flying){
       const available = unlockedAirports.filter(a=>a!==plane.currentAirport);
       if(available.length>0){
         const dest = available[Math.floor(Math.random()*available.length)];
