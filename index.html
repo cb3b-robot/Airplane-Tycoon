@@ -94,7 +94,7 @@ airportData.forEach((a,i)=>{
         lat: a.lat,
         lon: a.lon,
         level:1,
-        type: ["passenger","cargo","mixed"][Math.floor(Math.random()*3)], // specialization
+        type: ["passenger","cargo","mixed"][Math.floor(Math.random()*3)],
         unlocked: i<3,
         baseCost: 50000 + i*15000,
         revenueMultiplier:1,
@@ -133,10 +133,12 @@ function askCompanyName(){
     gameState.companyName = name || "Airplane Tycoon";
     document.getElementById('companyNameDisplay').innerText = gameState.companyName;
 }
+askCompanyName();
 
 // --- SAVE/LOAD ---
 function saveGame(){localStorage.setItem("airplaneTycoonUltimate",JSON.stringify(gameState));}
 function loadGame(){const saved = localStorage.getItem("airplaneTycoonUltimate"); if(saved) gameState=JSON.parse(saved);}
+loadGame();
 
 // --- UI UPDATE ---
 function updateUI(){
@@ -164,10 +166,9 @@ function updateUI(){
         const div=document.createElement('div');
         div.innerHTML=`
             ✈️ ${plane.name} (${planeTypes[plane.type].name}) - ${plane.status} 
-            <button onclick="assignRoute(${i})">Assign Route</button>
-            <button onclick="renamePlane(${i})">Rename</button>
-            <button onclick="upgradePlane(${i})">Upgrade</button>
             <button onclick="autoFlyPlane(${i})">Auto-Fly</button>
+            <button onclick="upgradePlane(${i})">Upgrade</button>
+            <button onclick="renamePlane(${i})">Rename</button>
         `;
         planeDiv.appendChild(div);
     });
@@ -190,6 +191,7 @@ function updateUI(){
         achievementDiv.appendChild(div);
     });
 }
+updateUI();
 
 // --- AIRPORT FUNCTIONS ---
 function unlockAirport(airport){
@@ -258,6 +260,8 @@ function renamePlane(index){
     updateUI();
     saveGame();
 }
+
+// --- AUTO FLY ---
 function autoFlyPlane(index){
     const plane = gameState.planes[index];
     const unlocked = gameState.airports.filter(a=>a.unlocked && (a.lat!==plane.lat || a.lon!==plane.lon));
@@ -269,7 +273,6 @@ function autoFlyPlane(index){
     updateUI();
     saveGame();
 }
-function assignRoute(index){alert("Manual assignment not implemented. Use Auto-Fly.");}
 
 // --- TOGGLES ---
 function toggleAutoFly(){autoFly=document.getElementById("autoFlyToggle").checked;}
@@ -301,12 +304,10 @@ function movePlanes(){
                 plane.status="idle"; 
                 plane.queue.shift();
 
-                // --- PROFIT CALCULATION ---
                 const baseProfit = 1000;
                 const profit = baseProfit * planeTypes[plane.type].profitMultiplier * dest.level * dest.reputation * (dest.revenueMultiplier||1) * (gameState.moneyMultiplier||1);
                 gameState.money += profit;
                 notify(`${plane.name} arrived at ${dest.name}! Earned $${Math.round(profit)}`);
-
             } else {
                 plane.lat += dx*speed; 
                 plane.lon += dy*speed; 
@@ -359,5 +360,4 @@ setInterval(checkMissionsAndAchievements,1000);
 // --- GAME TIME ---
 function advanceTime(){
     gameState.time.minute += 10;
-    if(gameState.time.minute >=60){ gameState.time.minute=0; gameState.time.hour++; }
-    if(gameState.time.hour >=24){ gameState.time.hour
+    if(game
