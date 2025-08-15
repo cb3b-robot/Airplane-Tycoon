@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Airplane Tycoon Core + Events</title>
+<title>Airplane Tycoon Full</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <style>
 html, body { height:100%; margin:0; font-family:Arial,sans-serif; }
@@ -46,13 +46,17 @@ let gameState = {
 let autoFly=false;
 let planeMarkers={};
 let activeEvents = [];
+let activeMissions = [];
+let achievements = [
+    {text:"Own 5 planes", type:"planes", target:5, reward:20000, completed:false},
+    {text:"Reach $1,000,000", type:"money", target:1000000, reward:50000, completed:false},
+    {text:"Upgrade an airport to level 5", type:"airportLevel", target:5, reward:30000, completed:false}
+];
 
-// --- INITIAL AIRPORTS (3 starting) ---
+// --- INITIAL AIRPORTS ---
 const airportData=[
     {name:"JFK",lat:40.6413,lon:-73.7781},{name:"LAX",lat:33.9416,lon:-118.4085},{name:"ORD",lat:41.9742,lon:-87.9073}
 ];
-
-// --- INITIALIZE AIRPORTS ---
 airportData.forEach(a=>{
     gameState.airports.push({name:a.name,lat:a.lat,lon:a.lon,level:1,unlocked:true,baseCost:50000});
 });
@@ -82,8 +86,8 @@ function askCompanyName(){
 askCompanyName();
 
 // --- SAVE/LOAD ---
-function saveGame(){localStorage.setItem("airplaneTycoonCore",JSON.stringify(gameState));}
-function loadGame(){const saved = localStorage.getItem("airplaneTycoonCore"); if(saved) gameState=JSON.parse(saved);}
+function saveGame(){localStorage.setItem("airplaneTycoonFull",JSON.stringify(gameState));}
+function loadGame(){const saved = localStorage.getItem("airplaneTycoonFull"); if(saved) gameState=JSON.parse(saved);}
 loadGame();
 
 // --- UI UPDATE ---
@@ -109,7 +113,6 @@ function updateUI(){
         planeDiv.appendChild(div);
     });
 }
-updateUI();
 
 // --- AIRPORT FUNCTIONS ---
 function upgradeAirport(a){
@@ -118,6 +121,8 @@ function upgradeAirport(a){
         gameState.money-=cost;
         a.level++;
         notify(`${a.name} upgraded to level ${a.level}!`);
+        checkMissions("upgrade", a.name);
+        checkAchievements();
         updateUI();
         saveGame();
     } else notify("Not enough money to upgrade!");
@@ -129,19 +134,13 @@ function buyPlane(){
     const cost = planeTypes[type].cost;
     if(gameState.money>=cost){
         gameState.money-=cost;
-        const newPlane = {
-            name:`Plane ${gameState.planes.length+1}`,
-            type:type,
-            status:"idle",
-            lat:gameState.airports[0].lat,
-            lon:gameState.airports[0].lon,
-            queue:[]
-        };
+        const newPlane = {name:`Plane ${gameState.planes.length+1}`, type:type, status:"idle", lat:gameState.airports[0].lat, lon:gameState.airports[0].lon, queue:[]};
         gameState.planes.push(newPlane);
         notify(`${newPlane.name} purchased!`);
         updateUI();
-        saveGame();
         addPlaneMarker(newPlane);
+        checkAchievements();
+        saveGame();
     } else notify("Not enough money!");
 }
 
@@ -174,10 +173,10 @@ function triggerRandomEvent(){
     const event = eventTypes[Math.floor(Math.random()*eventTypes.length)];
     if(event.name==="Storm"){
         const airport = gameState.airports[Math.floor(Math.random()*gameState.airports.length)];
-        activeEvents.push({type:event,airport:airport,duration:6}); // 6 hours
+        activeEvents.push({type:event,airport:airport,duration:6});
         notify(`Event: ${event.name} at ${airport.name}! ${event.description}`);
     } else {
-        activeEvents.push({type:event,duration:12}); // 12 hours
+        activeEvents.push({type:event,duration:12});
         notify(`Event: ${event.name}! ${event.description}`);
     }
 }
@@ -197,12 +196,84 @@ function calculateProfit(plane, airport){
     return baseProfit * multiplier;
 }
 
+// --- MISSIONS SYSTEM ---
+const missionTemplates = [
+    {text: "Fly 3 planes to JFK", type: "fly", target: "JFK", required: 3, reward: 5000},
+    {text: "Upgrade 2 airports", type: "upgrade", required: 2, reward: 10000}
+];
+
+function generateMissions(){
+    activeMissions = missionTemplates.map(m => ({...m, progress:0, completed:false}));
+    updateMissionUI();
+}
+
+function updateMissionUI(){
+    let missionDiv = document.getElementById("missionList");
+    if(!missionDiv){
+        missionDiv = document.createElement("div");
+        missionDiv.id = "missionList";
+        document.getElementById("ui").appendChild(missionDiv);
+    }
+    missionDiv.innerHTML = "<h3>Missions</h3>";
+    activeMissions.forEach(m=>{
+        const div = document.createElement("div");
+        div.innerText = `${m.text} - ${m.progress}/${m.required} ${m.completed?"✅":"❌"}`;
+        missionDiv.appendChild(div);
+    });
+}
+
+function checkMissions(eventType, airportName){
+    activeMissions.forEach(m=>{
+        if(m.completed) return;
+        if(m.type === eventType){
+            if(eventType==="fly" && m.target === airportName) m.progress++;
+            if(eventType==="upgrade") m.progress++;
+            if(m.progress >= m.required){
+                m.completed = true;
+                gameState.money += m.reward;
+                notify(`Mission completed: ${m.text}! Earned $${m.reward}`);
+            }
+        }
+    });
+    updateMissionUI();
+}
+
+// --- ACHIEVEMENTS SYSTEM ---
+function updateAchievementsUI(){
+    let achDiv = document.getElementById("achievementList");
+    if(!achDiv){
+        achDiv = document.createElement("div");
+        achDiv.id = "achievementList";
+        document.getElementById("ui").appendChild(achDiv);
+    }
+    achDiv.innerHTML = "<h3>Achievements</h3>";
+    achievements.forEach(a=>{
+        const div = document.createElement("div");
+        div.innerText = `${a.text} ${a.completed?"✅":"❌"}`;
+        achDiv.appendChild(div);
+    });
+}
+
+function checkAchievements(){
+    achievements.forEach(a=>{
+        if(a.completed) return;
+        if(a.type==="planes" && gameState.planes.length>=a.target) a.completed=true;
+        if(a.type==="money" && gameState.money>=a.target) a.completed=true;
+        if(a.type==="airportLevel" && gameState.airports.some(ap=>ap.level>=a.target)) a.completed=true;
+        if(a.completed){
+            gameState.money += a.reward;
+            notify(`Achievement unlocked: ${a.text}! Earned $${a.reward}`);
+        }
+    });
+    updateAchievementsUI();
+}
+
 // --- PLANE MARKERS & MOVEMENT ---
 function addPlaneMarker(p){
     planeMarkers[p.name]=L.marker([p.lat,p.lon], {icon:L.divIcon({className:'plane-marker', html:'✈️'})}).addTo(map);
 }
 
-function movePlanesWithEvents(){
+function movePlanesWithMissions(){
     gameState.planes.forEach(p=>{
         if(p.status==="flying" && p.queue.length>0){
             const destName = p.queue[0];
@@ -219,6 +290,8 @@ function movePlanesWithEvents(){
                 const profit = Math.round(calculateProfit(p, dest));
                 gameState.money += profit;
                 notify(`${p.name} arrived at ${dest.name}! Earned $${profit}`);
+                checkMissions("fly", dest.name);
+                checkAchievements();
             } else {
                 p.lat += dx*speed;
                 p.lon += dy*speed;
@@ -232,12 +305,15 @@ function movePlanesWithEvents(){
 function advanceTime(){
     gameState.time.minute+=10;
     if(gameState.time.minute>=60){ gameState.time.minute=0; gameState.time.hour++; }
-    if(gameState.time.hour>=24){ gameState.time.hour=0; gameState.time.day++; }
+    if(gameState.time.hour>=24){ 
+        gameState.time.hour=0; gameState.time.day++; 
+        generateMissions();
+    }
     document.getElementById('timeDisplay').innerText=`Day ${gameState.time.day}, ${gameState.time.hour.toString().padStart(2,'0')}:${gameState.time.minute.toString().padStart(2,'0')}`;
 }
 
 // --- INTERVALS ---
-setInterval(movePlanesWithEvents,1000);
+setInterval(movePlanesWithMissions,1000);
 setInterval(()=>{
     advanceTime();
     updateEvents();
@@ -245,8 +321,11 @@ setInterval(()=>{
     saveGame();
 },1000);
 
-// --- INITIAL MARKERS ---
+// --- INITIAL MARKERS & UI ---
 gameState.planes.forEach(addPlaneMarker);
+updateUI();
+generateMissions();
+updateAchievementsUI();
 </script>
 </body>
 </html>
