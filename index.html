@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Airplane Tycoon</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
 html, body { height:100%; margin:0; font-family:Arial,sans-serif; }
 #map { height:50%; }
@@ -30,6 +31,9 @@ button { margin:2px; }
   
   <h3>Planes</h3>
   <div id="planeList"></div>
+  
+  <h3>Profit Chart</h3>
+  <canvas id="profitChart" width="400" height="200"></canvas>
 </div>
 <div id="notifications"></div>
 
@@ -287,6 +291,17 @@ function updateTime(){
     document.getElementById("gameTime").innerText = String(gameTime.hours).padStart(2,'0') + ":" + String(gameTime.minutes).padStart(2,'0');
     document.getElementById("gameDay").innerText = gameTime.day;
 }
+
+// --- Profit Chart ---
+const ctx = document.getElementById('profitChart').getContext('2d');
+const profitData = { labels: [0], datasets:[{label:'Money', data:[gameState.money], borderColor:'rgb(75,192,192)', tension:0.2}]};
+const profitChart = new Chart(ctx,{type:'line', data:profitData, options:{responsive:true, plugins:{legend:{display:true}}, scales:{x:{title:{display:true,text:'Game Time (minutes)'}}, y:{title:{display:true,text:'Money ($)'}}}}});
+setInterval(()=>{
+    profitData.labels.push(profitData.labels.length*10);
+    profitData.datasets[0].data.push(gameState.money);
+    if(profitData.labels.length>50){ profitData.labels.shift(); profitData.datasets[0].data.shift(); }
+    profitChart.update();
+},10000);
 
 // --- Initialize ---
 drawAirports();
