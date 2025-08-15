@@ -7,7 +7,7 @@
 <style>
 html, body { height: 100%; margin: 0; font-family: sans-serif; }
 #map { height: 50%; width: 100%; }
-#ui { padding: 10px; background: #f0f0f0; }
+#ui { padding: 10px; background: #f0f0f0; overflow:auto; }
 button { margin: 3px; padding: 5px 10px; cursor: pointer; }
 .green { background: #4CAF50; color: white; }
 .orange { background: orange; color: white; }
@@ -39,10 +39,10 @@ input.rename-plane { width: 80px; }
 // =======================
 // Game Data
 // =======================
-let game = { money:150000, airports:[], planes:[], timeInterval:1000, passiveIncomeInterval:5000, nextPlaneId:1, profitHistory:[] };
+let game = { money:150000, airports:[], planes:[], timeInterval:1000, passiveIncomeInterval:5000, nextPlaneId:1, profitHistory:[], nextAirportUnlock:3 };
 
 // =======================
-// Airports
+// Airports (example list, can expand to 50+)
 // =======================
 const allAirports = [
   {name:"Los Angeles", code:"LAX", lat:33.9416, lng:-118.4085},
@@ -51,7 +51,15 @@ const allAirports = [
   {name:"Tokyo Haneda", code:"HND", lat:35.5494, lng:139.7798},
   {name:"Sydney", code:"SYD", lat:-33.9399, lng:151.1753},
   {name:"Paris CDG", code:"CDG", lat:49.0097, lng:2.5479},
-  {name:"Dubai", code:"DXB", lat:25.2532, lng:55.3657}
+  {name:"Dubai", code:"DXB", lat:25.2532, lng:55.3657},
+  {name:"Frankfurt", code:"FRA", lat:50.0379, lng:8.5622},
+  {name:"Singapore", code:"SIN", lat:1.3644, lng:103.9915},
+  {name:"Beijing Capital", code:"PEK", lat:40.0801, lng:116.5846},
+  {name:"Toronto Pearson", code:"YYZ", lat:43.6777, lng:-79.6248},
+  {name:"Miami", code:"MIA", lat:25.7959, lng:-80.2870},
+  {name:"Chicago O'Hare", code:"ORD", lat:41.9742, lng:-87.9073},
+  {name:"San Francisco", code:"SFO", lat:37.6213, lng:-122.3790},
+  {name:"Bangkok Suvarnabhumi", code:"BKK", lat:13.6900, lng:100.7501}
 ];
 const airportLevels = ["Small","Medium","Large"];
 const airportColors = ["green","orange","red"];
@@ -122,8 +130,18 @@ function renderUI(){
   // Airports
   const airportDiv=document.getElementById('airport-list'); airportDiv.innerHTML='';
   game.airports.forEach((a,i)=>{
-    const btn = document.createElement('button');
-    btn.className=airportColors[a.level]; btn.textContent=`${a.name} (${a.code}) Lvl: ${airportLevels[a.level]}`;
+    const btn = document.createElement('div');
+    btn.innerHTML=`${a.name} (${a.code}) Lvl: ${airportLevels[a.level]} `;
+    // Upgrade button
+    if(a.level<2){
+      const cost=(a.level+1)*50000;
+      const upBtn=document.createElement('button'); upBtn.textContent=`Upgrade ($${cost})`; upBtn.className='green';
+      upBtn.addEventListener('click',()=>{ 
+        if(game.money>=cost){ game.money-=cost; a.level++; notify(`${a.name} upgraded!`); saveGame(); renderUI(); updateMap(); } 
+        else notify('Not enough money!');
+      });
+      btn.appendChild(upBtn);
+    }
     airportDiv.appendChild(btn);
   });
   // Planes
@@ -143,6 +161,13 @@ function renderUI(){
     const addBtn = document.createElement('button'); addBtn.textContent='Add to Queue';
     addBtn.addEventListener('click',()=>{ p.queue.push(select.value); saveGame(); notify(`${p.name} queued to ${select.value}`); flyPlane(p); });
     btn.appendChild(select); btn.appendChild(addBtn);
+    // Upgrade plane button
+    const pt = planeTypes.find(pt=>pt.name===p.type);
+    if(pt.next && game.money>=pt.upgradeCost){
+      const upBtn=document.createElement('button'); upBtn.textContent=`Upgrade to ${pt.next} ($${pt.upgradeCost})`; upBtn.className='green';
+      upBtn.addEventListener('click',()=>{ game.money-=pt.upgradeCost; p.type=pt.next; notify(`${p.name} upgraded to ${pt.next}`); saveGame(); renderUI(); });
+      btn.appendChild(upBtn);
+    }
     planeDiv.appendChild(btn);
   });
 }
@@ -185,7 +210,7 @@ function flyPlane(plane){
     if(step>=steps){
       clearInterval(interval);
       plane.lat=dest.lat; plane.lng=dest.lng; plane.queue.shift();
-      const earning=Math.floor(speed*dist*10); game.money+=earning; notify(`${plane.name} arrived at ${dest.code} earning $${earning.toLocaleString()}`);
+      const earning=Math.floor(speed*dist*10*(dest.level+1)); game.money+=earning; notify(`${plane.name} arrived at ${dest.code} earning $${earning.toLocaleString()}`);
       plane.status="idle";
       // Auto-maintain
       if(autoMaintain) notify(`${plane.name} auto-maintained`);
