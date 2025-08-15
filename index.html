@@ -12,6 +12,7 @@ html, body { height:100%; margin:0; font-family:Arial,sans-serif; }
 button { margin:2px; }
 #notifications { position: fixed; bottom:10px; right:10px; width:300px; }
 .notification { background:#333; color:#fff; padding:5px 10px; margin-top:5px; border-radius:5px; opacity:0.9; }
+#missionList, #achievementList { margin-top:5px; }
 </style>
 </head>
 <body>
@@ -31,6 +32,12 @@ button { margin:2px; }
   
   <h3>Planes</h3>
   <div id="planeList"></div>
+
+  <h3>Missions</h3>
+  <div id="missionList"></div>
+
+  <h3>Achievements</h3>
+  <div id="achievementList"></div>
 </div>
 <div id="notifications"></div>
 
@@ -43,7 +50,9 @@ let gameState = {
     airports:[],
     planes:[],
     time:{day:1,hour:6,minute:0},
-    moneyMultiplier:1
+    moneyMultiplier:1,
+    missions:[],
+    achievements:[]
 };
 let autoFly=false;
 let autoMaintain=false;
@@ -85,9 +94,11 @@ airportData.forEach((a,i)=>{
         lat: a.lat,
         lon: a.lon,
         level:1,
+        type: ["passenger","cargo","mixed"][Math.floor(Math.random()*3)], // specialization
         unlocked: i<3,
         baseCost: 50000 + i*15000,
-        revenueMultiplier:1
+        revenueMultiplier:1,
+        reputation:1
     });
 });
 
@@ -98,17 +109,12 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&
 let airportMarkers={};
 let planeMarkers={};
 
-gameState.airports.forEach(a=>{
-    const marker=L.marker([a.lat,a.lon]).addTo(map).bindPopup(`${a.name} (Lvl ${a.level})`);
-    airportMarkers[a.name]=marker;
-});
-
 // --- PLANE TYPES ---
 const planeTypes=[
-    {name:"Tiny Plane", speed:500, cost:50000, profitMultiplier:1},
-    {name:"Regional Jet", speed:700, cost:150000, profitMultiplier:2},
-    {name:"Boeing 737", speed:850, cost:500000, profitMultiplier:3},
-    {name:"Boeing 747", speed:900, cost:1000000, profitMultiplier:5}
+    {name:"Tiny Plane", speed:500, cost:50000, profitMultiplier:1, fuel:100, capacity:50},
+    {name:"Regional Jet", speed:700, cost:150000, profitMultiplier:2, fuel:150, capacity:100},
+    {name:"Boeing 737", speed:850, cost:500000, profitMultiplier:3, fuel:300, capacity:200},
+    {name:"Boeing 747", speed:900, cost:1000000, profitMultiplier:5, fuel:500, capacity:400}
 ];
 
 // --- NOTIFICATIONS ---
@@ -165,6 +171,24 @@ function updateUI(){
         `;
         planeDiv.appendChild(div);
     });
+
+    // Missions
+    const missionDiv=document.getElementById('missionList');
+    missionDiv.innerHTML='';
+    gameState.missions.forEach(m=>{
+        const div=document.createElement('div');
+        div.innerText=`${m.name}: ${m.progress}/${m.target} ${m.completed ? '(Completed)' : ''}`;
+        missionDiv.appendChild(div);
+    });
+
+    // Achievements
+    const achievementDiv=document.getElementById('achievementList');
+    achievementDiv.innerHTML='';
+    gameState.achievements.forEach(a=>{
+        const div=document.createElement('div');
+        div.innerText=`${a.name} ${a.unlocked ? '(Unlocked)' : ''}`;
+        achievementDiv.appendChild(div);
+    });
 }
 
 // --- AIRPORT FUNCTIONS ---
@@ -182,6 +206,7 @@ function upgradeAirport(airport){
     if(gameState.money>=cost){
         gameState.money-=cost;
         airport.level++;
+        airport.reputation+=0.1;
         notify(`${airport.name} upgraded to level ${airport.level}!`);
         updateUI();
         saveGame();
@@ -200,7 +225,8 @@ function buyPlane(){
             status:"idle",
             lat:gameState.airports[0].lat,
             lon:gameState.airports[0].lon,
-            queue:[]
+            queue:[],
+            fuel:planeTypes[type].fuel
         };
         gameState.planes.push(newPlane);
         notify(`${newPlane.name} purchased!`);
@@ -217,6 +243,7 @@ function upgradePlane(index){
         if(gameState.money>=cost){
             gameState.money -= cost;
             plane.type = nextType;
+            plane.fuel=planeTypes[nextType].fuel;
             notify(`${plane.name} upgraded to ${planeTypes[nextType].name}!`);
             updateUI();
             saveGame();
@@ -274,9 +301,9 @@ function movePlanes(){
                 plane.status="idle"; 
                 plane.queue.shift();
 
-                // --- PROFIT FIX ---
+                // --- PROFIT CALCULATION ---
                 const baseProfit = 1000;
-                const profit = baseProfit * planeTypes[plane.type].profitMultiplier * dest.level * (dest.revenueMultiplier||1) * (gameState.moneyMultiplier||1);
+                const profit = baseProfit * planeTypes[plane.type].profitMultiplier * dest.level * dest.reputation * (dest.revenueMultiplier||1) * (gameState.moneyMultiplier||1);
                 gameState.money += profit;
                 notify(`${plane.name} arrived at ${dest.name}! Earned $${Math.round(profit)}`);
 
@@ -325,6 +352,7 @@ function checkMissionsAndAchievements(){
     gameState.achievements.forEach(a=>{
         if(!a.unlocked && a.name==="Own 10 planes" && gameState.planes.length>=10){ a.unlocked=true; notify(`Achievement Unlocked: ${a.name}`); }
     });
+    updateUI();
 }
 setInterval(checkMissionsAndAchievements,1000);
 
@@ -332,22 +360,4 @@ setInterval(checkMissionsAndAchievements,1000);
 function advanceTime(){
     gameState.time.minute += 10;
     if(gameState.time.minute >=60){ gameState.time.minute=0; gameState.time.hour++; }
-    if(gameState.time.hour >=24){ gameState.time.hour=0; gameState.time.day++; }
-    const h = gameState.time.hour.toString().padStart(2,'0');
-    const m = gameState.time.minute.toString().padStart(2,'0');
-    document.getElementById("timeDisplay").innerText = `Day ${gameState.time.day} - ${h}:${m}`;
-}
-
-// --- INIT ---
-askCompanyName();
-loadGame();
-updateUI();
-gameState.planes.forEach(addPlaneMarker);
-setInterval(()=>{
-    if(autoFly){ gameState.planes.forEach((p,i)=>{ if(p.status==="idle") autoFlyPlane(i); }); }
-    movePlanes();
-    advanceTime();
-},1000);
-</script>
-</body>
-</html>
+    if(gameState.time.hour >=24){ gameState.time.hour
