@@ -14,19 +14,19 @@
 
 <style>
   html, body { height: 100%; margin: 0; font-family: Arial, sans-serif; }
-  #map { height: 50vh; width: 100%; } /* Ensures the map is visible */
+  #map { height: 50vh; width: 100%; } /* ensures map is visible */
   #ui { padding: 10px; }
   button { margin: 2px; }
   #notifications { position: fixed; bottom: 10px; right: 10px; width: 300px; z-index: 999; }
   .notification { background: #333; color: #fff; padding: 6px 10px; margin-top: 6px; border-radius: 6px; opacity: .95; }
   .plane-marker { font-size: 18px; }
   .section { margin-top: 10px; }
-  .dim { opacity: 0.8; }
+  .dim { opacity: 0.85; }
 </style>
 </head>
 <body>
 
-<!-- Map first so it exists before JS initializes -->
+<!-- Map -->
 <div id="map"></div>
 
 <!-- UI -->
@@ -62,11 +62,7 @@
 
 <script>
 /* -------------------- Game State -------------------- */
-let gameState = {
-  money: 150000,
-  airports: [],
-  planes: []
-};
+let gameState = { money: 150000, airports: [], planes: [] };
 let autoFly = false;                 // global auto-fly toggle
 let planeMarkers = {};               // name -> Leaflet marker
 let flightLines = {};                // name -> Leaflet polyline
@@ -106,7 +102,7 @@ gameState.airports = allAirportsData.map((a,i)=>({
   baseCost: 50000 + i*10000
 }));
 
-// plane tiers (for upgrades)
+// plane tiers (upgrades)
 const planeTypes = [
   {name:"Tiny Plane",   speed:0.5,  cost: 50000,  profitMultiplier:1},
   {name:"Regional Jet", speed:0.8,  cost:100000,  profitMultiplier:1.5},
@@ -247,6 +243,7 @@ function autoFlyPlane(i){
   const dest = unlocked[Math.floor(Math.random() * unlocked.length)];
   plane.queue = [dest.name];
   plane.status = "flying";
+  setLegOrigin(plane);
   notify(`${plane.name} is flying to ${dest.name}`);
   drawFlightLines();
 }
@@ -257,7 +254,10 @@ function assignQueue(i){
   plane.queue = raw.split(",")
                    .map(s=>s.trim())
                    .filter(n=> gameState.airports.some(a=> a.name===n && a.unlocked));
-  if(plane.queue.length > 0) plane.status = "flying";
+  if(plane.queue.length > 0){
+    plane.status = "flying";
+    setLegOrigin(plane);
+  }
   drawFlightLines();
   updateUI();
 }
@@ -317,6 +317,30 @@ function checkMissions(){
   });
 }
 
+/* -------------------- Distance helpers (earnings) -------------------- */
+function haversineKm(lat1, lon1, lat2, lon2){
+  const R = 6371; // km
+  const toRad = d => d * Math.PI/180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat/2)**2 +
+            Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function nearestAirportName(lat, lon){
+  let best = null, bestD = Infinity;
+  gameState.airports.forEach(a=>{
+    const d = Math.hypot(a.lat - lat, a.lon - lon);
+    if(d < bestD){ bestD = d; best = a.name; }
+  });
+  return best || "Unknown";
+}
+function setLegOrigin(plane){
+  plane._originLat = plane.lat;
+  plane._originLon = plane.lon;
+  plane._originName = nearestAirportName(plane.lat, plane.lon);
+}
+
 /* -------------------- Flight lines (visual queues) -------------------- */
 function drawFlightLines(){
   // clear old
@@ -338,7 +362,7 @@ function drawFlightLines(){
   });
 }
 
-/* -------------------- Movement (distance-based speed) -------------------- */
+/* -------------------- Movement (constant step; distance = time) -------------------- */
 function movePlanes(){
   gameState.planes.forEach(p=>{
     if(p.status === "flying" && p.queue.length > 0){
@@ -354,34 +378,52 @@ function movePlanes(){
         // Arrived
         p.lat = dest.lat; p.lon = dest.lon;
         p.queue.shift();
-        p.status = p.queue.length > 0 ? "flying" : "idle";
 
-        // revenue (affected by event)
-        let mult = 1;
+        // ---- Distance-based earnings ----
+        const originLat = p._originLat ?? p.lat;
+        const originLon = p._originLon ?? p.lon;
+        const originName = p._originName ?? nearestAirportName(originLat, originLon);
+        const distanceKm = haversineKm(originLat, originLon, dest.lat, dest.lon);
+        let category = "Short-haul";
+        if(distanceKm >= 2000) category = "Long-haul";
+        else if(distanceKm >= 500) category = "Medium-haul";
+        const basePerKm = 1.2; // tweak for balance
+        let mult = planeTypes[p.type].profitMultiplier * dest.level;
         if(currentEvent) mult *= (currentEvent.multiplier || 1);
-        const profit = Math.round(1000 * planeTypes[p.type].profitMultiplier * dest.level * mult);
+        const profit = Math.round(distanceKm * basePerKm * mult) + 250;
         gameState.money += profit;
-        notify(`${p.name} arrived at ${dest.name}! Earned $${profit}`);
+        notify(`${p.name} arrived: ${originName} → ${dest.name} — ${category}, ${distanceKm.toFixed(1)} km. Earned $${profit.toLocaleString()}`);
         planeDeliveredCount++;
         checkAchievements(); checkMissions();
         updateUI();
 
-        // continuous auto-fly
-        if(autoFly && p.queue.length === 0){
-          const options = gameState.airports.filter(a=> a.unlocked && (a.lat!==p.lat || a.lon!==p.lon));
-          if(options.length){
-            const next = options[Math.floor(Math.random() * options.length)];
-            p.queue.push(next.name);
-            p.status = "flying";
-            notify(`${p.name} is flying to ${next.name}`);
+        // next leg / auto loop
+        if(p.queue.length > 0){
+          p.status = "flying";
+          setLegOrigin(p);
+        } else {
+          p.status = "idle";
+          if(autoFly){
+            const options = gameState.airports.filter(a=> a.unlocked && (a.lat!==p.lat || a.lon!==p.lon));
+            if(options.length){
+              const next = options[Math.floor(Math.random() * options.length)];
+              p.queue.push(next.name);
+              p.status = "flying";
+              setLegOrigin(p);
+              notify(`${p.name} is flying to ${next.name}`);
+            }
           }
         }
       } else {
-        // distance-based movement: farther routes take longer
-        const base = planeTypes[p.type].speed * 0.01; // base factor
-        const travel = base * dist;                   // scales with distance
-        p.lat += dx * travel;
-        p.lon += dy * travel;
+        // constant step length -> time scales with distance
+        const stepLen = planeTypes[p.type].speed * 0.006; // adjust feel here
+        const nx = dx / dist, ny = dy / dist;
+        if(stepLen >= dist){
+          p.lat = dest.lat; p.lon = dest.lon;
+        } else {
+          p.lat += nx * stepLen;
+          p.lon += ny * stepLen;
+        }
       }
 
       // update marker
@@ -403,7 +445,7 @@ function addPassiveIncome(){
 
 /* -------------------- Game Time -------------------- */
 function updateTime(){
-  gameTime.minutes += 10;                 // 10 minutes per real second (see interval below)
+  gameTime.minutes += 10;                 // 10 minutes per real second
   if(gameTime.minutes >= 60){ gameTime.minutes = 0; gameTime.hours++; }
   if(gameTime.hours >= 24){ gameTime.hours = 0; gameTime.day++; notify(`Day ${gameTime.day} has started!`); }
   document.getElementById('gameTime').innerText =
@@ -440,12 +482,10 @@ function updateChart(){
 /* -------------------- Init -------------------- */
 drawAirports();
 updateUI();
-
-// Intervals
-setInterval(movePlanes, 50);     // movement
+setInterval(movePlanes, 50);        // movement
 setInterval(addPassiveIncome, 10000); // passive income every 10s
-setInterval(updateTime, 1000);   // 1s = 10 game minutes
-setInterval(updateChart, 10000); // sync with passive income ticks
+setInterval(updateTime, 1000);      // 1s = 10 game minutes
+setInterval(updateChart, 10000);    // sync with passive income ticks
 </script>
 </body>
 </html>
