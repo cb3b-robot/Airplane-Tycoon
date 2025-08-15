@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Airplane Tycoon v2 – Single File</title>
+<title>Airplane Tycoon v2.1 – Routes & Turnaround</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
@@ -18,8 +18,8 @@
 body{
   margin:0; background:var(--bg); color:var(--text);
   font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Arial;
-  display:grid; grid-template-rows:auto 1fr 190px; height:100vh;
-  grid-template-columns:340px 1fr 420px;
+  display:grid; grid-template-rows:auto 1fr 180px; height:100vh;
+  grid-template-columns:340px 1fr 430px;
   grid-template-areas:
    "topbar topbar topbar"
    "left   map    right"
@@ -29,7 +29,7 @@ body{
 .stat{background:var(--panel2); padding:8px 10px; border-radius:8px; display:flex; gap:8px; align-items:center}
 .pill{padding:2px 8px; border-radius:999px; font-size:12px; background:#2a2f5e; color:var(--muted)}
 .money{font-weight:800; color:#b4e07c; font-size:18px}
-button, select{
+button, select, input[type=number], input[type=range]{
   background:#2a2f5e; color:var(--text); border:1px solid #38407b; border-radius:8px; padding:6px 10px; cursor:pointer;
 }
 button:disabled{opacity:.5; cursor:not-allowed}
@@ -48,13 +48,17 @@ h3{margin:8px 0 6px; font-size:15px; color:#c8cffc}
 .flex{display:flex; gap:8px; flex-wrap:wrap}
 .divider{height:1px; background:#2c3366; margin:10px 0}
 .legend{font-size:12px; color:var(--muted)}
-.tabbar{display:flex; gap:6px; margin:6px 0}
-.tabbar button{padding:6px 10px}
-.tab-active{outline:2px solid var(--accent)}
 .table{width:100%; border-collapse:collapse; font-size:12px}
 .table th,.table td{border-bottom:1px solid #2c3366; padding:6px 4px; text-align:left}
 .livery{display:inline-block; width:14px; height:14px; border-radius:3px; margin-right:6px; vertical-align:middle; border:1px solid #0003}
+.progress{height:6px; background:#11173a; border-radius:6px; overflow:hidden}
+.progress > i{display:block; height:100%; background:#60a5fa}
+.autoflyOn{background:#113a19; border-color:#1b6a2c}
+.autoflyOff{background:#3a1111; border-color:#6a1b1b}
 #moneyChart,#paxChart{width:100%; height:120px}
+.tabbar{display:flex; gap:6px; margin:6px 0}
+.tabbar button{padding:6px 10px}
+.tab-active{outline:2px solid var(--accent)}
 </style>
 </head>
 <body>
@@ -64,7 +68,7 @@ h3{margin:8px 0 6px; font-size:15px; color:#c8cffc}
     <div class="stat">🛫 <span class="small">Planes</span> <span id="planeCount" class="pill">0</span></div>
     <div class="stat">🗺️ <span class="small">Airports</span> <span id="airportCount" class="pill">0</span></div>
     <div class="stat">🙂 <span class="small">Satisfaction</span> <span id="satisfaction" class="pill">100</span></div>
-    <div class="stat">⛽ <span class="small">Fuel</span> <span id="fuelPrice" class="pill">$0.00/L</span></div>
+    <div class="stat">⛽ <span class="small">Fuel</span> <span id="fuelPrice" class="pill">$0.80/L</span></div>
     <div class="stat">⏱️ <span class="small">Speed</span>
       <select id="speedSelect"><option>1</option><option>2</option><option>4</option><option>8</option></select>
     </div>
@@ -162,7 +166,7 @@ function distKm(a,b){ const R=6371, dLa=(b.lat-a.lat)*Math.PI/180, dLo=(b.lon-a.
 
 /* ========= Data ========= */
 const DEFAULT = {
-  version: 2,
+  version: 21,
   money: 120000,
   gameSpeed: 1,
   autoMaintain: false,
@@ -172,7 +176,7 @@ const DEFAULT = {
   season: 'Neutral', // 'Holiday','Summer','Neutral'
   airports: [],
   planes: [],
-  routes: [],        // {id, from, to, type: 'pax'|'cargo', priceMul, schedSec, enabled, profit, paxMoved}
+  routes: [],        // {id, from, to, type:'pax'|'cargo', priceMul, schedSec, enabled, profit, paxMoved, last:[profits]}
   events: {active:null, endsAt:0},
   missions: [],
   achievements: [],
@@ -190,7 +194,6 @@ const PLANE_TYPES = {
 const LIVERIES = ['#9b87f5','#60a5fa','#34d399','#f59e0b','#ef4444','#e879f9'];
 
 const AIRPORTS_SEED = [
-  // region: NA, EU, APAC gating
   {id:'JFK', name:'New York JFK', code:'JFK', lat:40.6413, lon:-73.7781, region:'NA', cost:0, level:1},
   {id:'LAX', name:'Los Angeles', code:'LAX', lat:33.9416, lon:-118.4085, region:'NA', cost:12000, level:1},
   {id:'ORD', name:'Chicago O’Hare', code:'ORD', lat:41.9742, lon:-87.9073, region:'NA', cost:9000, level:1},
@@ -232,31 +235,34 @@ function initNew(){
   return st;
 }
 function migrate(old){
-  // v1 -> v2 minimal migration
   const st = structuredClone(DEFAULT);
   st.money = old.money ?? 100000;
   st.gameSpeed = old.gameSpeed ?? 1;
   st.autoMaintain = !!old.autoMaintain;
-  st.satisfaction = 100;
-  st.fuelPrice = 0.8;
-  st.season = 'Neutral';
-  // airports
+  st.satisfaction = old.satisfaction ?? 100;
+  st.fuelPrice = old.fuelPrice ?? 0.8;
+  st.season = old.season ?? 'Neutral';
   const mapById = Object.fromEntries(AIRPORTS_SEED.map(a=>[a.id,a]));
   st.airports = (old.airports||AIRPORTS_SEED).map(a=>({...mapById[a.id], ...a, level:a.level||1, closedUntil:a.closedUntil||0}));
-  // planes
   st.planes = (old.planes||[]).map(p=>({
     ...p,
-    level: p.level||1, age: p.age||0, livery: p.livery||pick(LIVERIES),
+    level: p.level||1,
+    age: p.age||0,
+    livery: p.livery||pick(LIVERIES),
+    routes: p.routes||[],          // NEW
+    routeIdx: p.routeIdx||0,       // NEW
+    readyAt: p.readyAt||0,         // NEW
     name: p.name || (PLANE_TYPES[p.typeId]?.label||'Plane')+' #'+Math.floor(Math.random()*90+10),
-    lastFlightProfit: p.lastFlightProfit||0, autoFly: !!p.autoFly
+    lastFlightProfit: p.lastFlightProfit||0,
+    autoFly: !!p.autoFly
   }));
-  st.routes = [];
+  st.routes = (old.routes||[]).map(r=>({...r, last:r?.last||[]}));
   st.missions = structuredClone(MISSIONS_SEED);
   st.achievements = structuredClone(ACHIEVEMENTS_SEED);
   st.moneySeries = old.moneySeries||[{t:nowSec(), v:st.money}];
-  st.paxSeries = [{t:nowSec(), v:0}];
+  st.paxSeries = old.paxSeries||[{t:nowSec(), v:0}];
   st.events = {active:null, endsAt:0};
-  st.version = 2;
+  st.version = 21;
   return st;
 }
 function load(){
@@ -264,7 +270,7 @@ function load(){
     const raw = localStorage.getItem('airplane_tycoon_mvp');
     if(!raw) return null;
     const parsed = JSON.parse(raw);
-    if((parsed.version||1) < 2) return migrate(parsed);
+    if((parsed.version||1) < 21) return migrate(parsed);
     return parsed;
   }catch{return null;}
 }
@@ -273,7 +279,7 @@ function save(){ localStorage.setItem('airplane_tycoon_mvp', JSON.stringify(S));
 /* ========= Map ========= */
 const map = L.map('map',{zoomControl:true}).setView([30,0],2);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap'}).addTo(map);
-const airportMarkers = new Map(), planeMarkers = new Map();
+const airportMarkers = new Map(), planeMarkers = new Map(), routeLines = new Map();
 function airportIcon(ap){
   const emoji = ap.unlocked ? '🟢' : '📍';
   const closed = apClosed(ap) ? '🔴' : '';
@@ -349,6 +355,12 @@ function renderTop(){
   elAutoMaintain.checked = S.autoMaintain;
   elCargoMode.checked = S.cargoMode;
 }
+function gateText(region){
+  if(region==='EU' && S.airports.filter(a=>a.unlocked && a.region==='NA').length<3) return 'Requires 3 NA airports';
+  if(region==='APAC' && S.money<100000) return 'Requires $100k funds';
+  return 'OK';
+}
+function apgradeCost(ap){ return Math.round(5000*ap.level*1.4); }
 function renderAirports(){
   leftAirports.innerHTML = '<h3>Airports</h3>';
   S.airports.forEach(ap=>{
@@ -368,6 +380,19 @@ function renderAirports(){
   leftAirports.querySelectorAll('button[data-unlock]').forEach(b=>b.onclick=()=>unlockAirport(b.getAttribute('data-unlock')));
   leftAirports.querySelectorAll('button[data-upg-ap]').forEach(b=>b.onclick=()=>upgradeAirport(b.getAttribute('data-upg-ap')));
 }
+function progressFrac(p){
+  if(!p.toAirportId || !p.departAt || nowSec()<=p.departAt) return 0;
+  const total = Math.max(1, p.arriveAt - p.departAt);
+  return clamp((nowSec() - p.departAt)/total, 0, 1);
+}
+function secondsLeft(p){
+  if(!p.toAirportId) return 0;
+  return Math.max(0, p.arriveAt - nowSec());
+}
+function readySecondsLeft(p){
+  const r = Math.max(0, (p.readyAt||0) - nowSec());
+  return r;
+}
 function renderFleet(){
   panelFleet.innerHTML = '<h3>Your Fleet</h3>';
   S.planes.forEach(p=>{
@@ -377,6 +402,9 @@ function renderFleet(){
     const inflight = p.toAirportId && nowSec()<p.arriveAt;
     const wearPct = Math.round(p.wear*100);
     const age = p.age|0;
+    const frac = progressFrac(p);
+    const eta = Math.ceil(secondsLeft(p)/S.gameSpeed);
+    const groundWait = readySecondsLeft(p);
     const wrap = document.createElement('div'); wrap.className='plane';
     wrap.innerHTML = `
       <div class="row">
@@ -393,24 +421,58 @@ function renderFleet(){
         <button data-upgrade="${p.id}">Upgrade (${fmt(planeUpgradeCost(p))})</button>
       </div>
       <div class="row">
-        <button data-fly="${p.id}" ${inflight?'disabled':''}>Fly</button>
+        <div class="progress" style="flex:1"><i style="width:${(frac*100).toFixed(1)}%"></i></div>
+        <span class="small" style="width:76px; text-align:right">${inflight?eta+'s':'—'}</span>
+      </div>
+      <div class="row">
+        <button data-fly="${p.id}" ${(inflight||groundWait>0)?'disabled':''} title="${groundWait>0?'Turnaround '+Math.ceil(groundWait)+'s remaining':''}">Fly</button>
         <label class="small"><input type="checkbox" data-autofly="${p.id}" ${p.autoFly?'checked':''}/> Auto-Fly</label>
-        <button data-livery="${p.id}">Paint (Free)</button>
-        <button data-retire="${p.id}" ${age< (PLANE_TYPES[p.typeId].ageLife+2) ? '' : ''}>Retire</button>
+        <button data-livery="${p.id}">Paint</button>
+        <button data-retire="${p.id}">Retire</button>
+      </div>
+      <div class="row">
+        <details style="width:100%"><summary class="small">Route list (${p.routes?.length||0})</summary>
+          <div class="small">Choose which saved routes this plane cycles (in order). Use the editor in Routes tab to create routes first.</div>
+          <div class="flex" id="rl-${p.id}"></div>
+        </details>
       </div>`;
     panelFleet.appendChild(wrap);
+
+    // color the autofly toggle row for clarity
+    const af = wrap.querySelector('label.small');
+    af.classList.add(p.autoFly ? 'autoflyOn' : 'autoflyOff');
+
+    // build checkboxes for current routes
+    const box = wrap.querySelector('#rl-'+p.id);
+    S.routes.forEach(r=>{
+      const from=getAirport(r.from).code, to=getAirport(r.to).code;
+      const id=`cb-${p.id}-${r.id}`;
+      const checked = (p.routes||[]).includes(r.id) ? 'checked' : '';
+      const div=document.createElement('div');
+      div.innerHTML = `<label class="small"><input type="checkbox" id="${id}" ${checked}> ${from}→${to} <span class="badge">${r.type}</span></label>`;
+      box.appendChild(div);
+      div.querySelector('input').onchange = (e)=>{
+        p.routes = p.routes||[];
+        if(e.target.checked){ if(!p.routes.includes(r.id)){ p.routes.push(r.id);} }
+        else{ p.routes = p.routes.filter(x=>x!==r.id); }
+        p.routeIdx = 0; save();
+      };
+    });
   });
   panelFleet.querySelectorAll('button[data-maintain]').forEach(b=>b.onclick=()=>maintainPlane(b.getAttribute('data-maintain')));
   panelFleet.querySelectorAll('button[data-upgrade]').forEach(b=>b.onclick=()=>upgradePlane(b.getAttribute('data-upgrade')));
   panelFleet.querySelectorAll('button[data-fly]').forEach(b=>b.onclick=()=>promptFlight(b.getAttribute('data-fly')));
-  panelFleet.querySelectorAll('input[data-autofly]').forEach(ch=>ch.onchange=()=>toggleAutofly(ch.getAttribute('data-autofly'), ch.checked));
+  panelFleet.querySelectorAll('input[data-autofly]').forEach(ch=>ch.onchange=()=>{
+    const p=S.planes.find(x=>x.id===ch.getAttribute('data-autofly')); p.autoFly=!!ch.checked; save(); renderFleet();
+  });
   panelFleet.querySelectorAll('button[data-livery]').forEach(b=>b.onclick=()=>repaint(b.getAttribute('data-livery')));
   panelFleet.querySelectorAll('button[data-retire]').forEach(b=>b.onclick=()=>retirePlane(b.getAttribute('data-retire')));
 }
+
 function renderRoutes(){
   panelRoutes.innerHTML = `
     <h3>Saved Routes & Schedules</h3>
-    <div class="small">Set price multiplier (0.6–1.5), choose type (pax/cargo), and schedule. Assign a plane to “Auto-Fly Routes”.</div>
+    <div class="small">Create routes, then assign them to planes in their “Route list”. Planes with Auto-Fly cycle selected routes in order.</div>
     <div class="divider"></div>
   `;
   const add = document.createElement('div'); add.className='card';
@@ -439,13 +501,15 @@ function renderRoutes(){
     const type=document.getElementById('routeType').value;
     const mul=Number(document.getElementById('routePriceMul').value);
     const sched=Number(document.getElementById('routeSched').value);
-    S.routes.push({id:'R'+Math.random().toString(36).slice(2,7), from, to, type, priceMul:clamp(mul,0.6,1.5), schedSec:Math.max(10,sched), enabled:true, profit:0, paxMoved:0});
+    S.routes.push({id:'R'+Math.random().toString(36).slice(2,7), from, to, type, priceMul:clamp(mul,0.6,1.5), schedSec:Math.max(10,sched), enabled:true, profit:0, paxMoved:0, last:[]});
     renderAll(); save(); log('🧭 Route added.');
   };
 
   S.routes.forEach(r=>{
     const from=getAirport(r.from), to=getAirport(r.to);
     const row=document.createElement('div'); row.className='route';
+    const last = (r.last||[]).slice(-10);
+    const sum = last.reduce((a,b)=>a+b,0);
     row.innerHTML=`
       <div class="row"><strong>${from.code} → ${to.code}</strong> <span class="badge">${r.type}</span></div>
       <div class="row">
@@ -453,9 +517,10 @@ function renderRoutes(){
         <label class="small"><input type="checkbox" data-r-en="${r.id}" ${r.enabled?'checked':''}/> Enabled</label>
       </div>
       <div class="row">
-        <span>Total Profit: <b>${fmt(r.profit)}</b>; Volume: ${r.paxMoved}</span>
+        <span>Total: <b>${fmt(r.profit)}</b>; Last10: <b>${fmt(sum)}</b>; Volume: ${r.paxMoved}</span>
         <button data-r-del="${r.id}">Delete</button>
-      </div>`;
+      </div>
+      <div class="small">Last 10: ${last.map(v=>v>=0?`<span class="ok">${fmt(v)}</span>`:`<span class="bad">${fmt(v)}</span>`).join(' · ')||'—'}</div>`;
     panelRoutes.appendChild(row);
   });
   panelRoutes.querySelectorAll('input[data-r-en]').forEach(ch=>ch.onchange=()=>{ const r=S.routes.find(x=>x.id===ch.getAttribute('data-r-en')); r.enabled=ch.checked; save();});
@@ -486,24 +551,15 @@ function renderMaintenance(){
 }
 function renderAll(){
   renderTop(); renderAirports(); renderFleet(); renderRoutes(); renderAnalytics(); renderMaintenance();
-  refreshAirportMarkers(); refreshPlaneMarkers();
+  refreshAirportMarkers(); refreshPlaneMarkers(); refreshRouteLines();
   renderMissions(); renderAchievements();
 }
 
 /* ========= Airports ========= */
 function getAirport(id){ return S.airports.find(a=>a.id===id); }
-function gateText(region){
-  if(region==='EU' && !S.airports.filter(a=>a.unlocked && a.region==='NA').length>=3) return 'Requires 3 NA airports';
-  if(region==='APAC' && S.money<100000) return 'Requires $100k funds';
-  return 'OK';
-}
 function canUnlock(ap){
-  if(ap.region==='EU'){
-    return S.airports.filter(a=>a.unlocked && a.region==='NA').length>=3;
-  }
-  if(ap.region==='APAC'){
-    return S.money>=100000;
-  }
+  if(ap.region==='EU'){ return S.airports.filter(a=>a.unlocked && a.region==='NA').length>=3; }
+  if(ap.region==='APAC'){ return S.money>=100000; }
   return true;
 }
 function unlockAirport(id){
@@ -514,11 +570,10 @@ function unlockAirport(id){
   checkAchievements();
   refreshAirportMarkers(); renderAll(); save();
 }
-function apgradeCost(ap){ return Math.round(5000*ap.level*1.4); }
 function upgradeAirport(id){
   const ap=getAirport(id); if(!ap || !ap.unlocked) return;
   const c=apgradeCost(ap); if(S.money<c) return log('❌ Not enough money.');
-  S.money-=c; ap.level++; log(`🏗️ Upgraded ${ap.code} to Level ${ap.level}. (Shorter turnarounds, higher demand)`);
+  S.money-=c; ap.level++; log(`🏗️ Upgraded ${ap.code} to Level ${ap.level}.`);
   S.missions.find(m=>m.id==='m3').progress++;
   renderAll(); save();
 }
@@ -530,7 +585,8 @@ function buyPlane(typeId){
   S.money-=t.price;
   const first=S.airports.find(a=>a.unlocked);
   const plane={id:'P'+(planeIdCounter++), typeId, level:1, name:`${t.label} #${Math.floor(Math.random()*90+10)}`, livery:pick(LIVERIES),
-   atAirportId:first.id, toAirportId:null, departAt:0, arriveAt:0, wear:0, age:0, autoFly:false, lastFlightProfit:0};
+   atAirportId:first.id, toAirportId:null, departAt:0, arriveAt:0, wear:0, age:0, autoFly:false, lastFlightProfit:0,
+   routes:[], routeIdx:0, readyAt:0};
   S.planes.push(plane); log(`🛩️ Purchased ${t.label}.`); checkAchievements(); renderAll(); save();
 }
 function planeUpgradeCost(p){ const base=PLANE_TYPES[p.typeId].upgradeCost; return p.level>=PLANE_TYPES[p.typeId].maxLevel?Infinity:Math.round(base*p.level); }
@@ -560,26 +616,32 @@ function retirePlane(id){
   renderAll(); save();
 }
 
-/* ========= Flight/Schedules ========= */
+/* ========= Flight & Turnaround ========= */
 function effStats(p){
   const t=PLANE_TYPES[p.typeId];
   const speed=t.speed*(1+0.10*(p.level-1));
   const capacity=Math.round(t.capacity*(1+0.15*(p.level-1))*airportDemand(getAirport(p.atAirportId)));
   const fuelLkm=t.fuelLkm*(1-0.05*(p.level-1));
-  const agePenalty = 1 - Math.max(0, (p.age - PLANE_TYPES[p.typeId].ageLife)*0.03); // older than life loses perf
+  const agePenalty = 1 - Math.max(0, (p.age - PLANE_TYPES[p.typeId].ageLife)*0.03);
   return {speed:speed*agePenalty, capacity:Math.max(10,Math.round(capacity*agePenalty)), fuelLkm};
 }
 function airportDemand(ap){
-  const base = 1 + (ap.level-1)*0.08;
+  const base = 1 + (ap.level-1)*0.10; // buffed to make upgrades matter with turnaround
   const seasonMul = S.season==='Holiday'?1.25 : S.season==='Summer'?1.15 : 1;
   return base*seasonMul;
 }
-function dynFareBase(){ // dynamic ticket price baseline per km
-  const sat = S.satisfaction/100;
-  return 0.9 * (0.8 + 0.4*sat); // 0.72..1.08
+function dynFareBase(){ const sat = S.satisfaction/100; return 0.9 * (0.8 + 0.4*sat); }
+function turnaroundSeconds(ap){
+  const base = 20; // seconds at level 1
+  const reduction = (ap.level-1)*0.06; // -6% per level
+  return Math.max(6, Math.floor(base*(1 - reduction)));
+}
+function canDepartNow(p){
+  return nowSec() >= (p.readyAt||0);
 }
 function promptFlight(id){
   const p=S.planes.find(x=>x.id===id); if(!p) return;
+  if(!canDepartNow(p)) return log(`🧹 Turnaround in progress (${Math.ceil((p.readyAt-nowSec()))}s).`);
   const unlocked=S.airports.filter(a=>a.unlocked && a.id!==p.atAirportId && !apClosed(a));
   if(!unlocked.length) return log('No available destination.');
   const from=getAirport(p.atAirportId);
@@ -593,10 +655,17 @@ function promptFlight(id){
 function scheduleFlight(p, destId, kind='pax', priceMul=1){
   const from=getAirport(p.atAirportId), to=getAirport(destId);
   if(apClosed(to)) return log('Destination closed.');
+  if(!canDepartNow(p)) return log(`🧹 Turnaround in progress (${Math.ceil((p.readyAt-nowSec()))}s).`);
+
   const {speed}=effStats(p); const d=distKm(from,to);
   const hours = d/Math.max(50,speed); const sec = Math.max(10, hours*3600*0.06);
+
   p.toAirportId=destId; p.departAt=nowSec(); p.arriveAt=p.departAt+Math.floor(sec/S.gameSpeed);
   p.kind=kind; p.priceMul=priceMul;
+
+  // draw route line
+  drawRouteLine(p.id, [from.lat,from.lon], [to.lat,to.lon]);
+
   log(`🛫 ${p.name} departing ${from.code} → ${to.code} (${d.toFixed(0)} km, ETA ${Math.round(sec/S.gameSpeed)}s).`);
 }
 
@@ -610,52 +679,62 @@ function arrivePlane(p){
   const baseFare = dynFareBase() * (p.priceMul||1) * demandBoost;
   const cargoMode = (p.kind||'pax')==='cargo' || (S.cargoMode && Math.random()<0.15);
 
-  // Random emergency (rare)
-  if(Math.random()<0.04){
-    const penalty = Math.round(rand(2000,6000));
-    S.money -= penalty; S.satisfaction = clamp(S.satisfaction - rand(3,8), 0, 100);
+  // Rare emergency
+  if(Math.random()<0.022){
+    const penalty = Math.round(rand(1500,4500));
+    S.money -= penalty; S.satisfaction = clamp(S.satisfaction - rand(2.5,6.5), 0, 100);
     S.missions.find(m=>m.id==='m4').progress=1;
     log(`🚨 Emergency on ${p.name}: compensation ${fmt(penalty)}.`);
   }
 
-  // Pax or Cargo model
   let revenue=0, pax=0, kg=0;
   if(cargoMode){
-    kg = Math.round(capacity*30 * (0.6+Math.random()*0.5)); // rough weight cap
-    revenue = kg * d * 0.0025; // $/kg-km
+    kg = Math.round(capacity*30 * (0.6+Math.random()*0.5));
+    revenue = kg * d * 0.0025;
   }else{
     pax = Math.round(capacity * (0.55+Math.random()*0.5));
     revenue = pax * baseFare * d;
   }
 
-  const fuelL = fuelLkm * d * (1.0 + (S.fuelPrice-0.8)); // crude sensitivity
+  const fuelL = fuelLkm * d * (1.0 + (S.fuelPrice-0.8));
   const fuelCost = fuelL * S.fuelPrice;
   const wearInc = PLANE_TYPES[p.typeId].wearKm * d / 100;
 
-  // Satisfaction impact (on-time if no storm & low wear)
   const onTime = !(S.events.active==='storm') && p.wear<0.85;
   S.satisfaction = clamp(S.satisfaction + (onTime? rand(0.2,0.6): -rand(0.5,1.2)), 0, 100);
 
-  // Profit
   const profit = Math.round(revenue - fuelCost);
   S.money += profit;
   p.wear = clamp(p.wear + wearInc, 0, 1);
+
+  // arrival state update
   p.atAirportId=p.toAirportId; p.toAirportId=null; p.departAt=0; p.arriveAt=0; p.lastFlightProfit=profit;
 
-  // Route stats if this was from a saved route (matched by recent instruction)
+  // clear route line
+  clearRouteLine(p.id);
+
+  // start turnaround timer at destination
+  const turn = turnaroundSeconds(getAirport(p.atAirportId));
+  p.readyAt = nowSec() + Math.floor(turn / S.gameSpeed);
+
+  // Route stats
   if(p.routeRef){
     const r=S.routes.find(x=>x.id===p.routeRef);
-    if(r){ r.profit += profit; r.paxMoved += cargoMode?kg:pax; }
+    if(r){
+      r.profit += profit;
+      r.paxMoved += cargoMode?kg:pax;
+      r.last = r.last || [];
+      r.last.push(profit);
+      if(r.last.length>10) r.last.shift();
+    }
     p.routeRef=null;
   }
 
-  // Missions
   const m2=S.missions.find(m=>m.id==='m2'); m2.progress=Math.min(m2.target, m2.progress + Math.max(0,profit));
 
-  // Auto maintain if needed
   if(S.autoMaintain && p.wear>0.55) tryAutoMaintain(p);
 
-  log(`🛬 ${p.name} landed at ${to.code}: ${profit>=0?'Profit':'Loss'} ${fmt(profit)} ${cargoMode?`(cargo ${kg}kg)`:`(pax ${pax})`}.`);
+  log(`🛬 ${p.name} landed at ${to.code}: ${profit>=0?'Profit':'Loss'} ${fmt(profit)} ${cargoMode?`(cargo ${kg}kg)`:`(pax ${pax})`}. Turnaround ~${turn}s.`);
 }
 
 /* ========= Auto systems ========= */
@@ -665,15 +744,33 @@ function tryAutoMaintain(p){
 function toggleAutofly(id,v){ const p=S.planes.find(x=>x.id===id); if(p){ p.autoFly=!!v; save(); } }
 function stepAutofly(p){
   if(p.toAirportId) return;
-  // Prefer assigned routes
+  if(!canDepartNow(p)) return; // respect turnaround
+  // Prefer per-plane routes if set
+  const list = (p.routes||[]).filter(rid=>{
+    const r = S.routes.find(x=>x.id===rid);
+    return r && r.enabled;
+  });
+  if(list.length){
+    const rid = list[p.routeIdx % list.length];
+    const r = S.routes.find(x=>x.id===rid);
+    if(r){
+      p.routeRef=r.id;
+      const dest = (r.from===p.atAirportId)? r.to : r.from; // bounce if already at from
+      scheduleFlight(p, dest, r.type, r.priceMul);
+      p.routeIdx = (p.routeIdx+1)%list.length;
+      return;
+    }
+  }
+  // Otherwise any active route will do
   const active = S.routes.filter(r=>r.enabled);
   if(active.length){
     const r = pick(active);
     p.routeRef=r.id;
-    scheduleFlight(p, r.from===p.atAirportId ? r.to : r.from, r.type, r.priceMul);
+    const dest = (r.from===p.atAirportId)? r.to : r.from;
+    scheduleFlight(p, dest, r.type, r.priceMul);
     return;
   }
-  // Otherwise random
+  // Fallback: random unlocked airport
   const opts=S.airports.filter(a=>a.unlocked && a.id!==p.atAirportId && !apClosed(a));
   if(!opts.length) return;
   scheduleFlight(p, pick(opts).id, 'pax', 1);
@@ -703,12 +800,10 @@ function updateEvent(){
   }
 }
 function updateFuelPrice(){
-  // Random walk with boundaries
-  const drift = rand(-0.01,0.01);
-  S.fuelPrice = clamp(S.fuelPrice + drift, 0.55, 1.35);
+  const drift = rand(-0.006,0.006);
+  S.fuelPrice = clamp(S.fuelPrice + drift, 0.62, 1.10);
 }
 function seasonalTick(){
-  // Occasionally flip to Summer (mild boost)
   if(Math.random()<0.02 && !S.events.active){
     S.season = (Math.random()<0.5)?'Summer':'Neutral';
   }
@@ -742,7 +837,7 @@ function checkAchievements(){
   if(!S.achievements.find(a=>a.id==='a4').done && S.airports.some(a=>a.unlocked && (a.region==='EU'||a.region==='APAC'))) completeAchievement('a4');
 }
 
-/* ========= Map plane markers ========= */
+/* ========= Map plane markers + route lines ========= */
 function refreshPlaneMarkers(){
   [...planeMarkers.keys()].forEach(id=>{ if(!S.planes.find(p=>p.id===id)){ map.removeLayer(planeMarkers.get(id)); planeMarkers.delete(id);} });
   S.planes.forEach(p=>{
@@ -762,6 +857,21 @@ function planePosition(p){
   const t = clamp((nowSec()-p.departAt)/Math.max(1,(p.arriveAt-p.departAt)), 0, 1);
   return {lat: from.lat + (to.lat-from.lat)*t, lon: from.lon + (to.lon-from.lon)*t};
 }
+function drawRouteLine(pid, a, b){
+  clearRouteLine(pid);
+  const line = L.polyline([a,b], {weight:3, opacity:0.8}).addTo(map);
+  routeLines.set(pid, line);
+}
+function clearRouteLine(pid){
+  if(routeLines.has(pid)){ map.removeLayer(routeLines.get(pid)); routeLines.delete(pid); }
+}
+function refreshRouteLines(){
+  // remove lines for planes that are not inflight
+  [...routeLines.keys()].forEach(pid=>{
+    const p=S.planes.find(x=>x.id===pid);
+    if(!p || !p.toAirportId) { clearRouteLine(pid); }
+  });
+}
 
 /* ========= Tabs ========= */
 document.getElementById('tabFleet').onclick=()=>showTab('Fleet');
@@ -769,10 +879,11 @@ document.getElementById('tabRoutes').onclick=()=>showTab('Routes');
 document.getElementById('tabAnalytics').onclick=()=>showTab('Analytics');
 document.getElementById('tabMaintenance').onclick=()=>showTab('Maintenance');
 function showTab(name){
-  for(const id of ['Fleet','Routes','Analytics','Maintenance']){
-    document.getElementById('tab'+id).classList.toggle('tab-active', id===name);
-    document.getElementById('panel'+id.slice(0, id==='Maintenance'?5: id.length)).style.display = (id===name)?'block':'none';
-  }
+  const tabs = {Fleet:'panelFleet', Routes:'panelRoutes', Analytics:'panelAnalytics', Maintenance:'panelMaint'};
+  Object.entries(tabs).forEach(([k,id])=>{
+    document.getElementById('tab'+k).classList.toggle('tab-active', k===name);
+    document.getElementById(id).style.display = (k===name)?'block':'none';
+  });
 }
 
 /* ========= Log ========= */
@@ -781,30 +892,28 @@ function log(msg){ const line=document.createElement('div'); line.innerHTML=`<sp
 /* ========= Loop ========= */
 function tick(){
   // arrivals
-  let departures = 0;
   S.planes.forEach(p=>{
     if(p.toAirportId && nowSec()>=p.arriveAt){ arrivePlane(p); }
   });
-  // auto-fly & schedules
+  // auto-fly
+  let departures = 0;
   S.planes.forEach(p=>{
     if(p.autoFly && !p.toAirportId){ stepAutofly(p); departures++; }
   });
   lastDepartures = departures;
 
-  // fuel & seasons
+  // economy ticks
   if(Math.random()<0.3) updateFuelPrice();
   seasonalTick();
-
-  // events
   maybeStartEvent(); updateEvent();
 
-  // plane aging
-  if(Math.random()<0.05) S.planes.forEach(p=>p.age += 0.01); // ~1y every ~200 ticks
+  // aging
+  if(Math.random()<0.05) S.planes.forEach(p=>p.age += 0.01);
 
   // charts
   if(Math.random()<0.2) pushSamples();
 
-  refreshPlaneMarkers(); renderTop(); checkAchievements(); save();
+  refreshPlaneMarkers(); refreshRouteLines(); renderTop(); checkAchievements(); save();
 }
 
 function boot(){
@@ -821,7 +930,7 @@ function boot(){
   renderAll();
   pushSamples();
   setInterval(tick,1000);
-  log('👋 v2 ready: routes, airport upgrades, fuel market, satisfaction, cargo, emergencies, and analytics!');
+  log('🚀 v2.1: per-plane route lists, turnaround, P&L details, ETAs, and route lines are live!');
 }
 
 /* ========= Start ========= */
