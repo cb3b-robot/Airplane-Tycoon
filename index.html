@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Airplane Tycoon Core</title>
+<title>Airplane Tycoon Core + Events</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <style>
 html, body { height:100%; margin:0; font-family:Arial,sans-serif; }
@@ -45,6 +45,7 @@ let gameState = {
 };
 let autoFly=false;
 let planeMarkers={};
+let activeEvents = [];
 
 // --- INITIAL AIRPORTS (3 starting) ---
 const airportData=[
@@ -163,12 +164,45 @@ function toggleAutoFly(){autoFly=document.getElementById("autoFlyToggle").checke
 // --- RESTART ---
 function restartGame(){if(confirm("Restart game?")){localStorage.clear();location.reload();}}
 
+// --- EVENTS SYSTEM ---
+const eventTypes = [
+    { name: "Storm", effect: (plane, airport)=>0.8, description: "Storm at airport reduces revenue!" },
+    { name: "Holiday", effect: (plane, airport)=>1.2, description: "Holiday season! Revenue increased!" }
+];
+
+function triggerRandomEvent(){
+    const event = eventTypes[Math.floor(Math.random()*eventTypes.length)];
+    if(event.name==="Storm"){
+        const airport = gameState.airports[Math.floor(Math.random()*gameState.airports.length)];
+        activeEvents.push({type:event,airport:airport,duration:6}); // 6 hours
+        notify(`Event: ${event.name} at ${airport.name}! ${event.description}`);
+    } else {
+        activeEvents.push({type:event,duration:12}); // 12 hours
+        notify(`Event: ${event.name}! ${event.description}`);
+    }
+}
+
+function updateEvents(){
+    activeEvents.forEach(ev=>ev.duration-=1);
+    activeEvents = activeEvents.filter(ev=>ev.duration>0);
+}
+
+function calculateProfit(plane, airport){
+    let baseProfit = 1000*planeTypes[plane.type].profitMultiplier*airport.level;
+    let multiplier = 1;
+    activeEvents.forEach(ev=>{
+        if(ev.type.name==="Storm" && ev.airport.name===airport.name) multiplier *= ev.type.effect(plane, airport);
+        if(ev.type.name==="Holiday") multiplier *= ev.type.effect(plane, airport);
+    });
+    return baseProfit * multiplier;
+}
+
 // --- PLANE MARKERS & MOVEMENT ---
 function addPlaneMarker(p){
     planeMarkers[p.name]=L.marker([p.lat,p.lon], {icon:L.divIcon({className:'plane-marker', html:'✈️'})}).addTo(map);
 }
 
-function movePlanes(){
+function movePlanesWithEvents(){
     gameState.planes.forEach(p=>{
         if(p.status==="flying" && p.queue.length>0){
             const destName = p.queue[0];
@@ -182,9 +216,9 @@ function movePlanes(){
                 p.lat=dest.lat; p.lon=dest.lon;
                 p.status="idle";
                 p.queue.shift();
-                const profit = 1000*planeTypes[p.type].profitMultiplier*dest.level;
-                gameState.money+=profit;
-                notify(`${p.name} arrived at ${dest.name}! Earned $${Math.round(profit)}`);
+                const profit = Math.round(calculateProfit(p, dest));
+                gameState.money += profit;
+                notify(`${p.name} arrived at ${dest.name}! Earned $${profit}`);
             } else {
                 p.lat += dx*speed;
                 p.lon += dy*speed;
@@ -202,12 +236,17 @@ function advanceTime(){
     document.getElementById('timeDisplay').innerText=`Day ${gameState.time.day}, ${gameState.time.hour.toString().padStart(2,'0')}:${gameState.time.minute.toString().padStart(2,'0')}`;
 }
 
-setInterval(movePlanes,1000);
-setInterval(advanceTime,1000);
+// --- INTERVALS ---
+setInterval(movePlanesWithEvents,1000);
+setInterval(()=>{
+    advanceTime();
+    updateEvents();
+    if(Math.random()<0.05) triggerRandomEvent();
+    saveGame();
+},1000);
 
 // --- INITIAL MARKERS ---
 gameState.planes.forEach(addPlaneMarker);
 </script>
-
 </body>
 </html>
