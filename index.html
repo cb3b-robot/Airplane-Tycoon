@@ -11,7 +11,7 @@ html, body { height:100%; margin:0; font-family:Arial,sans-serif; }
 #map { height:50%; }
 #ui { padding:10px; }
 button { margin:2px; }
-#notifications { position: fixed; bottom:10px; right:10px; width:300px; }
+#notifications { position: fixed; bottom:10px; right:10px; width:300px; z-index:999; }
 .notification { background:#333; color:#fff; padding:5px 10px; margin-top:5px; border-radius:5px; opacity:0.9; }
 .plane-marker { font-size:18px; }
 </style>
@@ -24,7 +24,9 @@ button { margin:2px; }
   <div>Money: $<span id="money">150000</span></div>
   <div>Time: <span id="gameTime">06:00</span> | Day: <span id="gameDay">1</span></div>
   <button onclick="buyPlane()">Buy Plane ($50,000)</button>
-  <label><input type="checkbox" id="autoFlyToggle" onchange="toggleAutoFly()"> Auto-Fly</label>
+  <label>
+    <input type="checkbox" id="autoFlyToggle" onchange="toggleAutoFly()"> Auto-Fly
+  </label>
 
   <h3>Airports</h3>
   <div id="airportList"></div>
@@ -56,8 +58,10 @@ let missions=[
     {desc:"Earn $100,000", completed:false}
 ];
 let gameTime = { hours: 6, minutes: 0, day: 1 };
+let flightLines = {};
+let profitHistory = [];
 
-// --- Airport Data ---
+// --- Airport Data (50+) ---
 const allAirportsData = [
     {name:"JFK",lat:40.6413,lon:-73.7781},{name:"LAX",lat:33.9416,lon:-118.4085},{name:"ORD",lat:41.9742,lon:-87.9073},
     {name:"ATL",lat:33.6407,lon:-84.4277},{name:"DFW",lat:32.8998,lon:-97.0403},{name:"DEN",lat:39.8561,lon:-104.6737},
@@ -158,7 +162,9 @@ function updateUI(){
         const div=document.createElement('div');
         div.innerHTML=`✈️ ${p.name} (${planeTypes[p.type].name}) - ${p.status} 
             <button onclick="autoFlyPlane(${i})">Auto-Fly</button>
-            <button onclick="upgradePlane(${i})">Upgrade</button>`;
+            <button onclick="upgradePlane(${i})">Upgrade</button>
+            <br>Queue: <input type="text" id="queue${i}" placeholder="Comma separated airports">
+            <button onclick="assignQueue(${i})">Set Route</button>`;
         planeDiv.appendChild(div);
     });
 }
@@ -210,7 +216,7 @@ function upgradePlane(i){
         plane.type = nextType;
         notify(`${plane.name} upgraded to ${planeTypes[nextType].name}!`);
         updateUI();
-    } else notify("Not enough money to upgrade!");
+    } else notify("Not enough money!");
 }
 
 function addPlaneMarker(p){
@@ -226,7 +232,27 @@ function autoFlyPlane(i){
     plane.status="flying";
     notify(`${plane.name} is flying to ${dest.name}`);
 }
-function toggleAutoFly(){autoFly=document.getElementById("autoFlyToggle").checked;}
+
+function assignQueue(i){
+    const val = document.getElementById(`queue${i}`).value;
+    const plane = gameState.planes[i];
+    plane.queue = val.split(",").map(s=>s.trim()).filter(name=>gameState.airports.some(a=>a.name===name && a.unlocked));
+    if(plane.queue.length>0) plane.status="flying";
+    updateUI();
+    drawFlightLines();
+}
+
+// --- Auto-Fly Toggle ---
+function toggleAutoFly(){
+    autoFly = document.getElementById("autoFlyToggle").checked;
+    const label = document.getElementById("autoFlyToggle").parentElement;
+    label.style.color = autoFly ? "green" : "red";
+    if(autoFly){
+        gameState.planes.forEach((p,i)=>{
+            if(p.status==="idle") autoFlyPlane(i);
+        });
+    }
+}
 
 // --- Achievements & Missions ---
 function checkAchievements(){
@@ -259,6 +285,22 @@ function checkMissions(){
     });
 }
 
+// --- Flight Lines ---
+function drawFlightLines(){
+    Object.keys(flightLines).forEach(k => { map.removeLayer(flightLines[k]); });
+    flightLines = {};
+    gameState.planes.forEach(p=>{
+        if(p.queue.length>0){
+            const latlngs = [[p.lat,p.lon]];
+            p.queue.forEach(destName => {
+                const dest = gameState.airports.find(a=>a.name===destName);
+                if(dest) latlngs.push([dest.lat,dest.lon]);
+            });
+            flightLines[p.name] = L.polyline(latlngs,{color:'blue'}).addTo(map);
+        }
+    });
+}
+
 // --- Move Planes ---
 function movePlanes(){
     gameState.planes.forEach(p=>{
@@ -266,28 +308,45 @@ function movePlanes(){
             const destName=p.queue[0];
             const dest = gameState.airports.find(a=>a.name===destName);
             if(!dest) return;
-            const dx=dest.lat-p.lat, dy=dest.lon-p.lon;
-            const dist=Math.sqrt(dx*dx + dy*dy);
-            if(dist<0.01){
-                p.lat=dest.lat; p.lon=dest.lon;
-                p.status="idle"; p.queue.shift();
+
+            const dx = dest.lat - p.lat;
+            const dy = dest.lon - p.lon;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+
+            if(dist < 0.01){
+                p.lat = dest.lat; p.lon = dest.lon;
+                p.queue.shift();
+                p.status = p.queue.length>0 ? "flying" : "idle";
+
                 let profitMultiplier = 1;
                 if(currentEvent) profitMultiplier *= currentEvent.multiplier || 1;
                 const profit = Math.round(1000*planeTypes[p.type].profitMultiplier*dest.level*profitMultiplier);
-                gameState.money+=profit;
+                gameState.money += profit;
                 notify(`${p.name} arrived at ${dest.name}! Earned $${profit}`);
                 planeDeliveredCount++;
                 checkAchievements();
                 checkMissions();
-                updateUI();
+
+                if(autoFly && p.queue.length===0){
+                    const unlocked = gameState.airports.filter(a=>a.unlocked&&(a.lat!==p.lat||a.lon!==p.lon));
+                    if(unlocked.length>0){
+                        const next = unlocked[Math.floor(Math.random()*unlocked.length)];
+                        p.queue.push(next.name);
+                        p.status = "flying";
+                        notify(`${p.name} is flying to ${next.name}`);
+                    }
+                }
             } else {
-                const moveFactor = 0.005;
-                p.lat += dx*planeTypes[p.type].speed*moveFactor;
-                p.lon += dy*planeTypes[p.type].speed*moveFactor;
+                const speedFactor = planeTypes[p.type].speed*0.01;
+                const travelSpeed = speedFactor * dist; // distance-based speed
+                p.lat += dx*travelSpeed;
+                p.lon += dy*travelSpeed;
             }
+
             planeMarkers[p.name].setLatLng([p.lat,p.lon]);
         }
     });
+    drawFlightLines();
 }
 
 // --- Passive Income ---
@@ -302,37 +361,6 @@ function addPassiveIncome(){
 // --- Game Time ---
 function updateTime(){
     gameTime.minutes += 10;
-    if(gameTime.minutes >= 60){
-        gameTime.minutes = 0;
-        gameTime.hours++;
-        if(gameTime.hours >= 24){
-            gameTime.hours = 0;
-            gameTime.day++;
-            notify(`Day ${gameTime.day} has started!`);
-        }
-    }
-    document.getElementById("gameTime").innerText = String(gameTime.hours).padStart(2,'0') + ":" + String(gameTime.minutes).padStart(2,'0');
-    document.getElementById("gameDay").innerText = gameTime.day;
-}
-
-// --- Profit Chart ---
-const ctx = document.getElementById('profitChart').getContext('2d');
-const profitData = { labels: [0], datasets:[{label:'Money', data:[gameState.money], borderColor:'rgb(75,192,192)', tension:0.2}]};
-const profitChart = new Chart(ctx,{type:'line', data:profitData, options:{responsive:true, plugins:{legend:{display:true}}, scales:{x:{title:{display:true,text:'Game Time (minutes)'}}, y:{title:{display:true,text:'Money ($)'}}}}});
-setInterval(()=>{
-    profitData.labels.push(profitData.labels.length*10);
-    profitData.datasets[0].data.push(gameState.money);
-    if(profitData.labels.length>50){ profitData.labels.shift(); profitData.datasets[0].data.shift(); }
-    profitChart.update();
-},10000);
-
-// --- Initialize ---
-drawAirports();
-updateUI();
-setInterval(addPassiveIncome,10000);
-setInterval(movePlanes,50);
-setInterval(updateTime,1000);
-
-</script>
-</body>
-</html>
+    if(gameTime.minutes >= 60){ gameTime.minutes=0; gameTime.hours++; }
+    if(gameTime.hours >= 24){ gameTime.hours=0; gameTime.day++; }
+    document.getElementById("gameTime").innerText = `${String(gameTime.hours).
