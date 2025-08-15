@@ -21,6 +21,7 @@ button { margin:2px; }
 <div id="ui">
   <h2 id="companyNameDisplay">Airplane Tycoon</h2>
   <div>Money: $<span id="money">150000</span></div>
+  <div>Time: <span id="gameTime">06:00</span> | Day: <span id="gameDay">1</span></div>
   <button onclick="buyPlane()">Buy Plane ($50,000)</button>
   <label><input type="checkbox" id="autoFlyToggle" onchange="toggleAutoFly()"> Auto-Fly</label>
 
@@ -50,6 +51,7 @@ let missions=[
     {desc:"Deliver 3 flights", completed: false, counter:0, target:3},
     {desc:"Earn $100,000", completed:false}
 ];
+let gameTime = { hours: 6, minutes: 0, day: 1 };
 
 // --- Airport Data ---
 const allAirportsData = [
@@ -103,7 +105,7 @@ function triggerRandomEvent(){
 }
 setInterval(triggerRandomEvent,60000);
 
-// --- Functions ---
+// --- Notifications ---
 function notify(msg){
     const n=document.createElement('div');
     n.className="notification";
@@ -112,6 +114,7 @@ function notify(msg){
     setTimeout(()=>n.remove(),3000);
 }
 
+// --- Airports UI ---
 function drawAirports(){
     gameState.airports.forEach(a=>{
         const color = a.unlocked ? "green" : "red";
@@ -198,7 +201,7 @@ function autoFlyPlane(i){
 }
 function toggleAutoFly(){autoFly=document.getElementById("autoFlyToggle").checked;}
 
-// --- Achievements ---
+// --- Achievements & Missions ---
 function checkAchievements(){
     if(!achievements.includes("First Plane") && gameState.planes.length>=1){
         achievements.push("First Plane");
@@ -214,7 +217,6 @@ function checkAchievements(){
     }
 }
 
-// --- Missions ---
 function checkMissions(){
     missions.forEach(m=>{
         if(!m.completed){
@@ -270,11 +272,28 @@ function addPassiveIncome(){
     updateUI();
 }
 
-// --- Game Loop ---
+// --- Game Time ---
+function updateTime(){
+    gameTime.minutes += 10;
+    if(gameTime.minutes >= 60){
+        gameTime.minutes = 0;
+        gameTime.hours++;
+        if(gameTime.hours >= 24){
+            gameTime.hours = 0;
+            gameTime.day++;
+            notify(`Day ${gameTime.day} has started!`);
+        }
+    }
+    document.getElementById("gameTime").innerText = String(gameTime.hours).padStart(2,'0') + ":" + String(gameTime.minutes).padStart(2,'0');
+    document.getElementById("gameDay").innerText = gameTime.day;
+}
+
+// --- Initialize ---
 drawAirports();
 updateUI();
 setInterval(addPassiveIncome,10000);
 setInterval(movePlanes,50);
+setInterval(updateTime,1000);
 
 </script>
 </body>
