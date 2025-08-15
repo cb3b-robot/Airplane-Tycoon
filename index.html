@@ -93,8 +93,13 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
     attribution:'&copy; OpenStreetMap contributors'
 }).addTo(map);
 
-// --- Plane Types ---
-const planeTypes=[{name:"Tiny Plane",speed:0.5,cost:50000,profitMultiplier:1}];
+// --- Plane Types / Upgrades ---
+const planeTypes = [
+    {name:"Tiny Plane", speed:0.5, cost:50000, profitMultiplier:1},
+    {name:"Regional Jet", speed:0.8, cost:100000, profitMultiplier:1.5},
+    {name:"Boeing 737", speed:1, cost:200000, profitMultiplier:2},
+    {name:"Boeing 747", speed:1.2, cost:500000, profitMultiplier:3}
+];
 
 // --- Events ---
 const events=[
@@ -151,8 +156,9 @@ function updateUI(){
     planeDiv.innerHTML='';
     gameState.planes.forEach((p,i)=>{
         const div=document.createElement('div');
-        div.innerHTML=`✈️ ${p.name} - ${p.status} 
-            <button onclick="autoFlyPlane(${i})">Auto-Fly</button>`;
+        div.innerHTML=`✈️ ${p.name} (${planeTypes[p.type].name}) - ${p.status} 
+            <button onclick="autoFlyPlane(${i})">Auto-Fly</button>
+            <button onclick="upgradePlane(${i})">Upgrade</button>`;
         planeDiv.appendChild(div);
     });
 }
@@ -188,6 +194,23 @@ function buyPlane(){
         addPlaneMarker(newPlane);
         updateUI();
     } else notify("Not enough money!");
+}
+
+function upgradePlane(i){
+    const plane = gameState.planes[i];
+    const currentType = plane.type;
+    if(currentType >= planeTypes.length-1){
+        notify(`${plane.name} is already at max level!`);
+        return;
+    }
+    const nextType = currentType + 1;
+    const cost = planeTypes[nextType].cost;
+    if(gameState.money >= cost){
+        gameState.money -= cost;
+        plane.type = nextType;
+        notify(`${plane.name} upgraded to ${planeTypes[nextType].name}!`);
+        updateUI();
+    } else notify("Not enough money to upgrade!");
 }
 
 function addPlaneMarker(p){
